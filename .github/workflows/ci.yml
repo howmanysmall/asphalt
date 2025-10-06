@@ -12,25 +12,29 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-          profile: minimal
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install mold (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mold clang
+
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Build
-        run: cargo build --locked --verbose
-
-      - name: Test
+      - name: Build and Test
         run: cargo test --locked --verbose
+        env:
+          RUSTC_WRAPPER: sccache
 
       - name: Machete
         if: matrix.os != 'windows-latest'
@@ -43,16 +47,22 @@ jobs:
       RUSTFLAGS: "-Dwarnings"
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
           components: rustfmt, clippy
+
+      - name: Install mold
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mold clang
+
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -62,3 +72,5 @@ jobs:
 
       - name: Clippy
         run: cargo clippy
+        env:
+          RUSTC_WRAPPER: sccache
