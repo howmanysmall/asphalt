@@ -174,7 +174,6 @@ dependencies = [
  "num_cpus",
  "owo-colors",
  "oxipng",
- "rayon",
  "rbx_binary",
  "rbx_cookie",
  "rbx_xml",
