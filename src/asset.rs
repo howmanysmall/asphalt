@@ -73,7 +73,12 @@ impl Asset {
         Ok(PathBuf::from(stripped).with_extension(self.ext.clone()))
     }
 
-    pub async fn process(&mut self, font_db: Arc<Database>, bleed: bool) -> anyhow::Result<()> {
+    pub async fn process(
+        &mut self,
+        font_db: Arc<Database>,
+        bleed: bool,
+        optimize: bool,
+    ) -> anyhow::Result<()> {
         if self.processed {
             bail!("Asset has already been processed");
         }
@@ -97,6 +102,10 @@ impl Asset {
             }
             _ => {}
         };
+
+        if optimize && crate::util::optimize::should_optimize(&self.path, true) {
+            self.data = crate::util::optimize::optimize_png(&self.data)?;
+        }
 
         self.processed = true;
 

@@ -1,5 +1,6 @@
 use crate::config::{CreatorType, PackAlgorithm, PackSort};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 
 #[derive(Parser)]
@@ -30,6 +31,15 @@ pub enum Commands {
 
     /// Generate JSON schema for configuration files.
     GenerateSchema(GenerateSchemaArgs),
+
+    /// Generate shell completions for your shell.
+    Completions(CompletionsArgs),
+
+    /// Check configuration file for errors without syncing.
+    Check,
+
+    /// List assets that would be synced without actually syncing them.
+    List,
 }
 
 #[derive(ValueEnum, Clone, Copy)]
@@ -102,6 +112,10 @@ pub struct SyncArgs {
     /// Enable deduplication of identical sprites.
     #[arg(long)]
     pub pack_dedupe: bool,
+
+    /// Optimize PNG assets with oxipng for smaller file sizes.
+    #[arg(long)]
+    pub optimize: bool,
 }
 
 fn parse_size(s: &str) -> Result<(u32, u32), String> {
@@ -162,4 +176,10 @@ pub struct GenerateSchemaArgs {
     /// Output path for the JSON schema file.
     #[arg(short, long, default_value = ".schemas/asphalt.schema.json")]
     pub output: String,
+}
+
+#[derive(Args)]
+pub struct CompletionsArgs {
+    /// The shell to generate completions for.
+    pub shell: Shell,
 }

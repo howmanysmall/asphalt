@@ -12,7 +12,7 @@ pub async fn upload(args: UploadArgs) -> anyhow::Result<()> {
     let mut font_db = Database::new();
     font_db.load_system_fonts();
 
-    asset.process(Arc::new(font_db), args.bleed).await?;
+    asset.process(Arc::new(font_db), args.bleed, false).await?;
 
     let creator = Creator {
         ty: args.creator_type,
