@@ -202,13 +202,18 @@ pub async fn sync(multi_progress: MultiProgress, args: SyncArgs) -> Result<()> {
                 println!("\n{} New assets to sync:", "●".green());
                 for asset in &new_assets {
                     let size_kb = asset.data.len() as f64 / 1024.0;
-                    println!("  {} {} {}",
+                    println!(
+                        "  {} {} {}",
                         "+".green(),
                         asset.path.display(),
                         format!("({:.1} KB)", size_kb).dimmed()
                     );
                 }
-                println!("\n{} {} new asset(s) would be synced", "Summary:".bold(), new_len.to_string().green());
+                println!(
+                    "\n{} {} new asset(s) would be synced",
+                    "Summary:".bold(),
+                    new_len.to_string().green()
+                );
                 bail!("Dry run completed - {} new asset(s) found", new_len)
             }
 
@@ -216,8 +221,14 @@ pub async fn sync(multi_progress: MultiProgress, args: SyncArgs) -> Result<()> {
             return Ok(());
         }
 
-        let processed_assets =
-            process::process(new_assets, state.clone(), input_name.clone(), input.bleed, args.optimize).await?;
+        let processed_assets = process::process(
+            new_assets,
+            state.clone(),
+            input_name.clone(),
+            input.bleed,
+            args.optimize,
+        )
+        .await?;
 
         // Handle packing if enabled
         let final_assets = if should_pack(input, &args) {

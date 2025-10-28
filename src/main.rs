@@ -51,10 +51,16 @@ async fn main() -> miette::Result<()> {
     log::set_max_level(level);
 
     match args.command {
-        Commands::Sync(args) => sync(multi_progress, args).await.map_err(|e| miette::miette!(e)),
+        Commands::Sync(args) => sync(multi_progress, args)
+            .await
+            .map_err(|e| miette::miette!(e)),
         Commands::Upload(args) => upload(args).await.map_err(|e| miette::miette!(e)),
-        Commands::MigrateLockfile(args) => migrate_lockfile(args).await.map_err(|e| miette::miette!(e)),
-        Commands::GenerateSchema(args) => generate_schema(args).await.map_err(|e| miette::miette!(e)),
+        Commands::MigrateLockfile(args) => {
+            migrate_lockfile(args).await.map_err(|e| miette::miette!(e))
+        }
+        Commands::GenerateSchema(args) => {
+            generate_schema(args).await.map_err(|e| miette::miette!(e))
+        }
         Commands::Completions(args) => {
             generate_completions(args);
             Ok(())
