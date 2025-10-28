@@ -11,6 +11,7 @@ use anyhow::{Context, Result, bail};
 use backend::BackendSyncResult;
 use indicatif::MultiProgress;
 use log::{info, warn};
+use owo_colors::OwoColorize;
 use resvg::usvg::fontdb;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -198,14 +199,25 @@ pub async fn sync(multi_progress: MultiProgress, args: SyncArgs) -> Result<()> {
             let new_len = new_assets.len();
 
             if new_len > 0 {
-                bail!("{new_len} new assets would be synced!")
+                println!("\n{} New assets to sync:", "●".green());
+                for asset in &new_assets {
+                    let size_kb = asset.data.len() as f64 / 1024.0;
+                    println!("  {} {} {}",
+                        "+".green(),
+                        asset.path.display(),
+                        format!("({:.1} KB)", size_kb).dimmed()
+                    );
+                }
+                println!("\n{} {} new asset(s) would be synced", "Summary:".bold(), new_len.to_string().green());
+                bail!("Dry run completed - {} new asset(s) found", new_len)
             }
-            info!("No new assets would be synced.");
+
+            println!("{} No new assets to sync", "✓".green());
             return Ok(());
         }
 
         let processed_assets =
-            process::process(new_assets, state.clone(), input_name.clone(), input.bleed).await?;
+            process::process(new_assets, state.clone(), input_name.clone(), input.bleed, args.optimize).await?;
 
         // Handle packing if enabled
         let final_assets = if should_pack(input, &args) {
