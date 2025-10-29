@@ -17,6 +17,7 @@ mod cli;
 mod config;
 mod glob;
 mod lockfile;
+mod migrate_config;
 mod migrate_lockfile;
 mod pack;
 mod progress_bar;
@@ -58,6 +59,13 @@ async fn main() -> miette::Result<()> {
         Commands::MigrateLockfile(args) => {
             migrate_lockfile(args).await.map_err(|e| miette::miette!(e))
         }
+        Commands::Convert(args) => migrate_config::migrate_config(
+            &args.input,
+            args.output.as_deref(),
+            args.dry_run,
+            args.force,
+        )
+        .map_err(|e| miette::miette!(e)),
         Commands::GenerateSchema(args) => {
             generate_schema(args).await.map_err(|e| miette::miette!(e))
         }

@@ -134,13 +134,23 @@ pub async fn sync(multi_progress: MultiProgress, args: SyncArgs) -> Result<()> {
                     }
 
                     let node = if let Some(ref sprite_info) = existing.entry.sprite_info {
-                        codegen::Node::AtlasSprite(codegen::AtlasSpriteData {
-                            image: format!("rbxassetid://{}", existing.entry.asset_id),
-                            rect: sprite_info.rect,
-                            size: sprite_info.source_size,
-                            trimmed: sprite_info.trimmed,
-                            sprite_source_size: sprite_info.sprite_source_size,
-                        })
+                        let asset_url = format!("rbxassetid://{}", existing.entry.asset_id);
+                        if let Some(ref animation_meta) = sprite_info.animation {
+                            codegen::Node::Animation(codegen::AnimationData {
+                                image: asset_url,
+                                frames: animation_meta.frame_rects.clone(),
+                                duration_ms: animation_meta.duration_ms,
+                                loops: animation_meta.loops,
+                            })
+                        } else {
+                            codegen::Node::AtlasSprite(codegen::AtlasSpriteData {
+                                image: asset_url,
+                                rect: sprite_info.rect,
+                                size: sprite_info.source_size,
+                                trimmed: sprite_info.trimmed,
+                                sprite_source_size: sprite_info.sprite_source_size,
+                            })
+                        }
                     } else {
                         codegen::Node::String(format!("rbxassetid://{}", existing.entry.asset_id))
                     };
@@ -462,17 +472,38 @@ async fn handle_atlas_upload(
             continue;
         };
 
+        // Check if this sprite has animation data
+        let node = if let Some(animation_info) = &sprite_info.animation {
+            // Compute frame rectangles from the layout
+            let frame_rects = compute_animation_frame_rects(
+                &sprite_info.rect,
+                animation_info.frame_size.width,
+                animation_info.frame_size.height,
+                animation_info.frame_count,
+                &animation_info.layout,
+            );
+
+            codegen::Node::Animation(codegen::AnimationData {
+                image: atlas_asset_url.clone(),
+                frames: frame_rects,
+                duration_ms: animation_info.frame_duration_ms,
+                loops: animation_info.loops,
+            })
+        } else {
+            codegen::Node::AtlasSprite(codegen::AtlasSpriteData {
+                image: atlas_asset_url.clone(),
+                rect: sprite_info.rect,
+                size: sprite_info.source_size,
+                trimmed: sprite_info.trimmed,
+                sprite_source_size: sprite_info.sprite_source_size,
+            })
+        };
+
         codegen_tx
             .send(CodegenInsertion {
                 input_name: result.input_name.clone(),
                 asset_path: original_path,
-                node: codegen::Node::AtlasSprite(codegen::AtlasSpriteData {
-                    image: atlas_asset_url.clone(),
-                    rect: sprite_info.rect,
-                    size: sprite_info.source_size,
-                    trimmed: sprite_info.trimmed,
-                    sprite_source_size: sprite_info.sprite_source_size,
-                }),
+                node,
             })
             .await?;
 
@@ -483,11 +514,27 @@ async fn handle_atlas_upload(
                 continue;
             };
 
+            let animation = sprite_info.animation.as_ref().map(|anim| {
+                let frame_rects = compute_animation_frame_rects(
+                    &sprite_info.rect,
+                    anim.frame_size.width,
+                    anim.frame_size.height,
+                    anim.frame_count,
+                    &anim.layout,
+                );
+                crate::lockfile::AnimationMetadata {
+                    frame_rects,
+                    duration_ms: anim.frame_duration_ms,
+                    loops: anim.loops,
+                }
+            });
+
             let lockfile_sprite_info = crate::lockfile::SpriteInfo {
                 rect: sprite_info.rect,
                 source_size: sprite_info.source_size,
                 trimmed: sprite_info.trimmed,
                 sprite_source_size: sprite_info.sprite_source_size,
+                animation,
             };
 
             lockfile_tx
@@ -505,6 +552,56 @@ async fn handle_atlas_upload(
     }
 
     Ok(())
+}
+
+/// Compute individual frame rectangles within a packed animation sprite
+fn compute_animation_frame_rects(
+    combined_rect: &crate::pack::rect::Rect,
+    frame_width: u32,
+    frame_height: u32,
+    frame_count: u32,
+    layout: &crate::pack::manifest::AnimationLayoutInfo,
+) -> Vec<crate::pack::rect::Rect> {
+    use crate::pack::rect::Rect;
+
+    let mut frame_rects = Vec::new();
+
+    match layout {
+        crate::pack::manifest::AnimationLayoutInfo::HorizontalStrip => {
+            for i in 0..frame_count {
+                frame_rects.push(Rect::new(
+                    combined_rect.x + i * frame_width,
+                    combined_rect.y,
+                    frame_width,
+                    frame_height,
+                ));
+            }
+        }
+        crate::pack::manifest::AnimationLayoutInfo::VerticalStrip => {
+            for i in 0..frame_count {
+                frame_rects.push(Rect::new(
+                    combined_rect.x,
+                    combined_rect.y + i * frame_height,
+                    frame_width,
+                    frame_height,
+                ));
+            }
+        }
+        crate::pack::manifest::AnimationLayoutInfo::Grid { columns } => {
+            for i in 0..frame_count {
+                let col = i % columns;
+                let row = i / columns;
+                frame_rects.push(Rect::new(
+                    combined_rect.x + col * frame_width,
+                    combined_rect.y + row * frame_height,
+                    frame_width,
+                    frame_height,
+                ));
+            }
+        }
+    }
+
+    frame_rects
 }
 
 struct CodegenInsertion {
@@ -596,6 +693,8 @@ fn should_pack(input: &Input, args: &SyncArgs) -> bool {
 
 /// Apply CLI argument overrides to pack options
 fn apply_pack_overrides(base_options: Option<&PackOptions>, args: &SyncArgs) -> PackOptions {
+    use crate::config::PackMode;
+
     let mut options = base_options.cloned().unwrap_or_default();
 
     // Apply CLI overrides
@@ -605,32 +704,39 @@ fn apply_pack_overrides(base_options: Option<&PackOptions>, args: &SyncArgs) -> 
     if args.no_pack {
         options.enabled = false;
     }
-    if let Some(max_size) = args.pack_max_size {
-        options.max_size = max_size;
-    }
-    if let Some(padding) = args.pack_padding {
-        options.padding = padding;
-    }
-    if let Some(extrude) = args.pack_extrude {
-        options.extrude = extrude;
-    }
-    if let Some(algorithm) = args.pack_algorithm.clone() {
-        options.algorithm = algorithm;
-    }
-    if args.pack_trim {
-        options.allow_trim = true;
-    }
-    if args.pack_no_trim {
-        options.allow_trim = false;
-    }
-    if let Some(page_limit) = args.pack_page_limit {
-        options.page_limit = Some(page_limit);
-    }
-    if let Some(sort) = args.pack_sort.clone() {
-        options.sort = sort;
-    }
-    if args.pack_dedupe {
-        options.dedupe = true;
+
+    // For CLI overrides, we only modify Static mode options
+    // If mode is Animated, CLI args won't apply to mode-specific settings
+    if let PackMode::Static(mut static_opts) = options.mode {
+        if let Some(max_size) = args.pack_max_size {
+            static_opts.max_size = max_size;
+        }
+        if let Some(padding) = args.pack_padding {
+            static_opts.padding = padding;
+        }
+        if let Some(extrude) = args.pack_extrude {
+            static_opts.extrude = extrude;
+        }
+        if let Some(algorithm) = args.pack_algorithm.clone() {
+            static_opts.algorithm = algorithm;
+        }
+        if args.pack_trim {
+            static_opts.allow_trim = true;
+        }
+        if args.pack_no_trim {
+            static_opts.allow_trim = false;
+        }
+        if let Some(page_limit) = args.pack_page_limit {
+            static_opts.page_limit = Some(page_limit);
+        }
+        if let Some(sort) = args.pack_sort.clone() {
+            static_opts.sort = sort;
+        }
+        if args.pack_dedupe {
+            static_opts.dedupe = true;
+        }
+
+        options.mode = PackMode::Static(static_opts);
     }
 
     options

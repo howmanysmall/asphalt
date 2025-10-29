@@ -28,6 +28,15 @@ pub struct SpriteInfo {
     pub source_size: crate::pack::rect::Size,
     pub trimmed: bool,
     pub sprite_source_size: Option<crate::pack::rect::Rect>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animation: Option<AnimationMetadata>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AnimationMetadata {
+    pub frame_rects: Vec<crate::pack::rect::Rect>,
+    pub duration_ms: u32,
+    pub loops: bool,
 }
 
 impl Default for Lockfile {
@@ -229,6 +238,7 @@ mod tests {
             } else {
                 None
             },
+            animation: None,
         }
     }
 
@@ -387,6 +397,7 @@ mod tests {
             source_size: Size::new(u32::MAX, u32::MAX),
             trimmed: true,
             sprite_source_size: Some(Rect::new(0, 0, u32::MAX, u32::MAX)),
+            animation: None,
         };
 
         lockfile.insert(
@@ -409,6 +420,7 @@ mod tests {
             source_size: Size::new(1, 1),
             trimmed: false,
             sprite_source_size: None,
+            animation: None,
         };
 
         lockfile.insert(

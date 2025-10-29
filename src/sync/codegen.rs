@@ -16,6 +16,7 @@ pub enum Node {
     #[allow(dead_code)]
     Number(u64),
     AtlasSprite(AtlasSpriteData),
+    Animation(AnimationData),
 }
 
 #[derive(Clone)]
@@ -25,6 +26,14 @@ pub struct AtlasSpriteData {
     pub size: Size,
     pub trimmed: bool,
     pub sprite_source_size: Option<Rect>,
+}
+
+#[derive(Clone)]
+pub struct AnimationData {
+    pub image: String,
+    pub frames: Vec<Rect>,
+    pub duration_ms: u32,
+    pub loops: bool,
 }
 
 pub enum Language {
@@ -215,6 +224,17 @@ fn generate_ts_node(node: &Node, indent: usize) -> String {
             result.push('}');
             result
         }
+        Node::Animation(_) => {
+            let mut result = String::from("{\n");
+            let tab = "\t".repeat(indent + 1);
+            result.push_str(&format!("{}readonly image: string;\n", tab));
+            result.push_str(&format!("{}readonly frames: readonly {{readonly x: number; readonly y: number; readonly width: number; readonly height: number}}[];\n", tab));
+            result.push_str(&format!("{}readonly durationMs: number;\n", tab));
+            result.push_str(&format!("{}readonly loops: boolean;\n", tab));
+            result.push_str(&"\t".repeat(indent));
+            result.push('}');
+            result
+        }
     }
 }
 
@@ -271,6 +291,25 @@ fn generate_luau_node(node: &Node, indent: usize) -> String {
                     tab, sprite_source.x, sprite_source.y
                 ));
             }
+            result.push_str(&"\t".repeat(indent));
+            result.push('}');
+            result
+        }
+        Node::Animation(data) => {
+            let tab = "\t".repeat(indent + 1);
+            let tab2 = "\t".repeat(indent + 2);
+            let mut result = String::from("{\n");
+            result.push_str(&format!("{}image = \"{}\",\n", tab, data.image));
+            result.push_str(&format!("{}frames = {{\n", tab));
+            for frame in &data.frames {
+                result.push_str(&format!(
+                    "{}{{ x = {}, y = {}, width = {}, height = {} }},\n",
+                    tab2, frame.x, frame.y, frame.width, frame.height
+                ));
+            }
+            result.push_str(&format!("{}}},\n", tab));
+            result.push_str(&format!("{}durationMs = {},\n", tab, data.duration_ms));
+            result.push_str(&format!("{}loops = {},\n", tab, data.loops));
             result.push_str(&"\t".repeat(indent));
             result.push('}');
             result
@@ -722,5 +761,151 @@ mod tests {
         .unwrap();
         assert!(ts_code.contains("declare const imageIds:"));
         assert!(ts_code.contains("export = imageIds"));
+    }
+
+    #[test]
+    fn test_animation_node_luau() {
+        let animation = Node::Animation(AnimationData {
+            image: "rbxassetid://987654321".to_string(),
+            frames: vec![
+                Rect::new(0, 0, 64, 64),
+                Rect::new(64, 0, 64, 64),
+                Rect::new(128, 0, 64, 64),
+            ],
+            duration_ms: 100,
+            loops: true,
+        });
+
+        let luau_code = generate_luau_node(&animation, 0);
+        assert!(luau_code.contains(r#"image = "rbxassetid://987654321""#));
+        assert!(luau_code.contains("frames = {"));
+        assert!(luau_code.contains("durationMs = 100"));
+        assert!(luau_code.contains("loops = true"));
+        assert!(luau_code.contains("x = 0, y = 0, width = 64, height = 64"));
+        assert!(luau_code.contains("x = 64, y = 0, width = 64, height = 64"));
+        assert!(luau_code.contains("x = 128, y = 0, width = 64, height = 64"));
+    }
+
+    #[test]
+    fn test_animation_node_typescript_type() {
+        let animation = Node::Animation(AnimationData {
+            image: "test.png".to_string(),
+            frames: vec![Rect::new(0, 0, 32, 32)],
+            duration_ms: 50,
+            loops: false,
+        });
+
+        let ts_type = generate_ts_node(&animation, 0);
+        eprintln!("Generated TypeScript:\n{}", ts_type);
+        assert!(ts_type.contains("readonly image: string;"));
+        assert!(ts_type.contains("readonly frames: readonly"));
+        assert!(ts_type.contains("x: number"));
+        assert!(ts_type.contains("y: number"));
+        assert!(ts_type.contains("width: number"));
+        assert!(ts_type.contains("height: number"));
+        assert!(ts_type.contains("readonly durationMs: number;"));
+        assert!(ts_type.contains("readonly loops: boolean;"));
+    }
+
+    #[test]
+    fn test_animation_in_nested_structure() {
+        let mut animations = BTreeMap::new();
+        animations.insert(
+            "walk".to_string(),
+            Node::Animation(AnimationData {
+                image: "rbxassetid://111".to_string(),
+                frames: vec![Rect::new(0, 0, 32, 32), Rect::new(32, 0, 32, 32)],
+                duration_ms: 200,
+                loops: true,
+            }),
+        );
+        animations.insert(
+            "run".to_string(),
+            Node::Animation(AnimationData {
+                image: "rbxassetid://222".to_string(),
+                frames: vec![Rect::new(0, 0, 32, 32)],
+                duration_ms: 100,
+                loops: true,
+            }),
+        );
+
+        let mut root_map = BTreeMap::new();
+        root_map.insert("player".to_string(), Node::Table(animations));
+        let root = Node::Table(root_map);
+
+        let luau_code = generate_code(
+            Language::Luau,
+            "animations",
+            &root,
+            &config::InputNamingConvention::CamelCase,
+        )
+        .unwrap();
+
+        assert!(luau_code.contains("local animations = {"));
+        assert!(luau_code.contains("return animations"));
+        assert!(luau_code.contains("walk ="));
+        assert!(luau_code.contains("run ="));
+        assert!(luau_code.contains("rbxassetid://111"));
+        assert!(luau_code.contains("rbxassetid://222"));
+    }
+
+    #[test]
+    fn test_animation_with_no_loop() {
+        let animation = Node::Animation(AnimationData {
+            image: "rbxassetid://555".to_string(),
+            frames: vec![Rect::new(0, 0, 48, 48)],
+            duration_ms: 500,
+            loops: false,
+        });
+
+        let luau_code = generate_luau_node(&animation, 0);
+        assert!(luau_code.contains("loops = false"));
+        assert!(luau_code.contains("durationMs = 500"));
+    }
+
+    #[test]
+    fn test_animation_mixed_with_sprites() {
+        let mut items = BTreeMap::new();
+
+        // Regular atlas sprite
+        items.insert(
+            "sword".to_string(),
+            Node::AtlasSprite(AtlasSpriteData {
+                image: "rbxassetid://100".to_string(),
+                rect: Rect::new(0, 0, 64, 64),
+                size: Size::new(64, 64),
+                trimmed: false,
+                sprite_source_size: None,
+            }),
+        );
+
+        // Animation
+        items.insert(
+            "explosion".to_string(),
+            Node::Animation(AnimationData {
+                image: "rbxassetid://200".to_string(),
+                frames: vec![Rect::new(0, 0, 64, 64), Rect::new(64, 0, 64, 64)],
+                duration_ms: 50,
+                loops: false,
+            }),
+        );
+
+        let root = Node::Table(items);
+
+        let luau_code = generate_code(
+            Language::Luau,
+            "assets",
+            &root,
+            &config::InputNamingConvention::CamelCase,
+        )
+        .unwrap();
+
+        // Check both sprite and animation are present
+        assert!(luau_code.contains("sword ="));
+        assert!(luau_code.contains("explosion ="));
+        assert!(luau_code.contains("rbxassetid://100"));
+        assert!(luau_code.contains("rbxassetid://200"));
+        assert!(luau_code.contains("imageRectOffset")); // From sprite
+        assert!(luau_code.contains("frames =")); // From animation
     }
 }

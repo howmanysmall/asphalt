@@ -7,7 +7,7 @@ license = "MIT"
 name = "asphalt"
 readme = "README.md"
 repository = "https://github.com/jacktabscode/asphalt"
-version = "1.3.3"
+version = "2.0.0"
 
 [dependencies]
 anyhow = "1.0.98"
@@ -37,6 +37,7 @@ oxipng = { version = "9.1", default-features = false, features = ["parallel", "z
 rbx_binary = { version = "1.0.0", features = ["serde"] }
 rbx_cookie = { version = "0.1.5", default-features = false }
 rbx_xml = "1.0.0"
+regex = "1.12.2"
 reqwest = { version = "0.12.22", default-features = false, features = ["rustls-tls", "gzip", "multipart"] }
 resvg = "0.45.1"
 roblox_install = "1.0.0"
@@ -56,7 +57,10 @@ inherits = "release"
 lto = "thin"
 
 [dev-dependencies]
+assert_cmd = "2.0"
 insta = { version = "1.43.1", features = ["yaml"] }
+predicates = "3.0"
+tempfile = "3.8"
 
 [profile.dev.package]
 insta.opt-level = 3

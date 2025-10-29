@@ -5,14 +5,13 @@ It's a modern alternative to [Tarmac](https://github.com/Roblox/Tarmac).
 
 ## Features
 
--   Syncs your images, sounds, [videos](#videos), [animations](#animations), and [3D models](#models) to Roblox
--   Generates Luau or Typescript code so you can use them in your game
--   Can target Roblox users or groups
--   Processes SVGs into PNGs and alpha bleeds images for crisp edges
--   Allows defining existing uploaded assets, so all of your stuff can be referenced in one place
-
-## Features Coming Soon
--  Capablility to pack your images into spritesheets for lower client memory usage
+- Syncs your images, sounds, [videos](#videos), [animations](#animations), and [3D models](#models) to Roblox
+- Generates Luau or Typescript code so you can use them in your game
+- Can target Roblox users or groups
+- [Pack your images into spritesheets for lower client memory usage](#sprite-packing)
+- [Pack animated spritesheets with timeline data for smooth playback](#animated-spritesheet-packing)
+- Processes SVGs into PNGs and alpha bleeds images for crisp edges
+- Allows defining existing uploaded assets, so all of your stuff can be referenced in one place
 
 ## Installation
 
@@ -62,11 +61,11 @@ Syncs all of your assets defined in your inputs.
 
 There are three targets you can use to sync assets:
 
--   `cloud`: Uploads your assets to Roblox. This will generate a `asphalt.lock.toml` file which you should commit to source control. This is the default target.
+- `cloud`: Uploads your assets to Roblox. This will generate a `asphalt.lock.toml` file which you should commit to source control. This is the default target.
 
--   `studio`: Syncs assets locally to Roblox Studio. This is useful for testing assets in Studio before uploading them to Roblox.
+- `studio`: Syncs assets locally to Roblox Studio. This is useful for testing assets in Studio before uploading them to Roblox.
 
--   `debug`: Syncs assets to an `.asphalt-debug` folder in the current directory. You can use this option see how Asphalt will process your files.
+- `debug`: Syncs assets to an `.asphalt-debug` folder in the current directory. You can use this option see how Asphalt will process your files.
 
 ```bash
 asphalt sync # Equivalent to --target cloud
@@ -117,44 +116,45 @@ output_path = "src/shared"
 
 ### Format
 
--   `creator`: Creator
-	-   The Roblox creator to upload the assets under.
--   `codegen`: Codegen (optional)
-	-   Code generation options.
--	`inputs`: map<string, Input>
-	-   A map of input names to input configurations.
+- `creator`: Creator
+ 	- The Roblox creator to upload the assets under.
+- `codegen`: Codegen (optional)
+ 	- Code generation options.
+- `inputs`: map<string, Input>
+ 	- A map of input names to input configurations.
 
 #### Creator
 
--	`type`: "user" or "group"
--	`id`: number
+- `type`: "user" or "group"
+- `id`: number
 
 #### Codegen
 
--   `typescript`: boolean (optional)
-    -   Generate a Typescript definition file.
--   `style`: "flat" | "nested" (optional)
-    -   The code-generation style to use. Defaults to `flat`, which makes accessing assets feel like writing file paths. You may consider using `nested` if you are not a TypeScript user, however, as Luau does not support template literal types.
--   `strip_extensions`: boolean (optional)
-    -   Whether to strip the file extension. Defaults to `false` for the same reason described above.
--   `content`: boolean (optional)
-    -   Whether to output `Content` instead of `string`s. Defaults to `false`.
+- `typescript`: boolean (optional)
+  - Generate a Typescript definition file.
+- `style`: "flat" | "nested" (optional)
+  - The code-generation style to use. Defaults to `flat`, which makes accessing assets feel like writing file paths. You may consider using `nested` if you are not a TypeScript user, however, as Luau does not support template literal types.
+- `strip_extensions`: boolean (optional)
+  - Whether to strip the file extension. Defaults to `false` for the same reason described above.
+- `content`: boolean (optional)
+  - Whether to output `Content` instead of `string`s. Defaults to `false`.
 
 #### Input
--	`path`: glob
-	-	A glob pattern to match files to upload.
--	`output_path`: string
-	-	The directory path to output the generated code.
--	`web`: map<string, WebAsset>
-	-	A map of paths relative to the input path to existing assets on Roblox.
-- 	`bleed`: boolean (optional)
-	- 	Whether to alpha bleed images. Defaults to `true`. Keep in mind that changing this setting won't invalidate your lockfile or reupload your images.
-- 	`warn_each_duplicate`: boolean (optional)
-	- 	Whether to emit a warning each time a duplicate file is found. Defaults to `true`.
+
+- `path`: glob
+ 	- A glob pattern to match files to upload.
+- `output_path`: string
+ 	- The directory path to output the generated code.
+- `web`: map<string, WebAsset>
+ 	- A map of paths relative to the input path to existing assets on Roblox.
+-  `bleed`: boolean (optional)
+ 	-  Whether to alpha bleed images. Defaults to `true`. Keep in mind that changing this setting won't invalidate your lockfile or reupload your images.
+-  `warn_each_duplicate`: boolean (optional)
+ 	-  Whether to emit a warning each time a duplicate file is found. Defaults to `true`.
 
 #### WebAsset
 
--   `id`: number
+- `id`: number
 
 ## Code Generation
 
@@ -178,6 +178,7 @@ You can specify this using the `--api-key` argument, or the `ASPHALT_API_KEY` en
 You can get one from the [Creator Dashboard](https://create.roblox.com/dashboard/credentials).
 
 The following permissions are required:
+
 - `asset:read`
 - `asset:write`
 
@@ -205,6 +206,41 @@ When uploading videos, you must provide the `--expected-price` argument, which i
 Asphalt supports uploading `.fbx` files purely out of ease, but Roblox does not offer control over the import settings through the web API. As such, this is not a feature that most developers use.
 
 We instead recommend uploading your models with the 3D Importer in Studio, which provides a 3D preview, error checking, and customizable settings. You can then use a tool like [Rojo](https://github.com/rojo-rbx/rojo) to build them into your project.
+
+## Animated Spritesheet Packing
+
+Asphalt can pack animated spritesheets by detecting frame sequences in your image files using regex patterns. This allows you to create smooth animations from numbered frame files.
+
+### Pack Configuration
+
+To enable animated packing, add a `pack` section under your input configuration:
+
+```toml
+[inputs.assets.pack]
+enabled = true
+mode = "animated"
+frame_pattern = r"(\w+)_(\d+)\.png"
+```
+
+### Defaults
+
+- `frame_pattern`: `r"(\w+)_(\d+)\.png"` (matches files like `walk_001.png`, `walk_002.png`, etc.)
+
+The regex pattern must contain exactly two capture groups: the first for the animation name, and the second for the frame number.
+
+### Example Files
+
+With the default pattern, these files would be packed into an animation named `walk`:
+
+- `walk_001.png`
+- `walk_002.png`
+- `walk_003.png`
+
+### Troubleshooting
+
+If you encounter an error like "Invalid regex pattern in frame_pattern: regex parse error: ...", verify your regex syntax. The pattern must be a valid regular expression.
+
+Ensure your image files follow a consistent naming convention that matches your `frame_pattern`. Frame numbers should be sequential starting from 1 or 0.
 
 ## Attributions
 

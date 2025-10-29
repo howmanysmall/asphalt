@@ -29,6 +29,12 @@ pub enum Commands {
     /// We basically pretend nothing has changed, so your assets don't get reuploaded.
     MigrateLockfile(MigrateLockfileArgs),
 
+    /// Convert configuration file to new format (v2.0 PackMode structure).
+    ///
+    /// Migrates old flat pack configuration to the new mode-based structure.
+    /// Creates a backup of the old config with .old suffix.
+    Convert(ConvertArgs),
+
     /// Generate JSON schema for configuration files.
     GenerateSchema(GenerateSchemaArgs),
 
@@ -169,6 +175,25 @@ pub struct UploadArgs {
 pub struct MigrateLockfileArgs {
     /// The default input name to use. Only applies when upgrading from V0 to V1.
     pub input_name: Option<String>,
+}
+
+#[derive(Args)]
+pub struct ConvertArgs {
+    /// Input configuration file path (old format).
+    #[arg(short, long)]
+    pub input: String,
+
+    /// Output configuration file path (new format). Defaults to input path.
+    #[arg(short, long)]
+    pub output: Option<String>,
+
+    /// Show what would be converted without writing files.
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Force conversion even if there are conflicts or warnings.
+    #[arg(short, long)]
+    pub force: bool,
 }
 
 #[derive(Args)]
