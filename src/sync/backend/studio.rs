@@ -1,19 +1,14 @@
+use super::{BackendSyncResult, SyncBackend};
 use crate::{
-    asset::{Asset, AssetType, ModelType},
-    config::Input,
+    asset::{Asset, AssetType},
     sync::SyncState,
 };
-
-use super::{BackendSyncResult, SyncBackend};
-use anyhow::Context;
+use anyhow::{Context, bail};
 use fs_err::tokio as fs;
-use log::{info, warn};
+use log::{debug, info, warn};
+use relative_path::RelativePathBuf;
 use roblox_install::RobloxStudio;
-use std::{
-    env,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{env, path::PathBuf, sync::Arc};
 
 pub struct StudioBackend {
     identifier: String,
@@ -25,22 +20,23 @@ impl SyncBackend for StudioBackend {
     where
         Self: Sized,
     {
-        let studio = RobloxStudio::locate().context("Failed to locate Roblox Studio directory")?;
+        let content_path = get_content_path()?;
 
-        let current_dir = env::current_dir().context("Failed to get current working directory")?;
-        let name = current_dir
+        let cwd = env::current_dir()?;
+        let cwd_name = cwd
             .file_name()
             .and_then(|s| s.to_str())
             .context("Failed to get current directory name")?;
 
-        let project_name = name
+        let project_name = cwd_name
             .to_lowercase()
             .split_whitespace()
             .collect::<Vec<_>>()
             .join("-");
 
         let identifier = format!(".asphalt-{project_name}");
-        let sync_path = studio.content_path().join(&identifier);
+        let sync_path = content_path.join(&identifier);
+
         info!("Assets will be synced to: {}", sync_path.display());
 
         if sync_path.exists() {
@@ -62,30 +58,25 @@ impl SyncBackend for StudioBackend {
         &self,
         state: Arc<SyncState>,
         input_name: String,
-        input: &Input,
         asset: &Asset,
     ) -> anyhow::Result<Option<BackendSyncResult>> {
-        if let AssetType::Model(ModelType::Animation(_)) = asset.ty {
+        if matches!(asset.ty, AssetType::Model(_) | AssetType::Animation) {
             return match state.existing_lockfile.get(&input_name, &asset.hash) {
                 Some(entry) => Ok(Some(BackendSyncResult::Studio(format!(
                     "rbxassetid://{}",
                     entry.asset_id
                 )))),
                 None => {
-                    warn!("Animations cannot be synced in this context");
+                    warn!(
+                        "Models and Animations cannot be synced to Studio without having been uploaded first"
+                    );
                     Ok(None)
                 }
             };
         }
 
-        let rel_path = asset.rel_path(&input.path.get_prefix())?;
-
-        let parent_dir = rel_path.parent().unwrap_or_else(|| Path::new(""));
-        let extension = rel_path.extension().unwrap().to_str().unwrap();
-        let hash_filename = format!("{}.{}", asset.hash, extension);
-
-        let hash_rel_path = parent_dir.join(hash_filename);
-        let target_path = self.sync_path.join(&hash_rel_path);
+        let rel_target_path = RelativePathBuf::from(&asset.hash).with_extension(&asset.ext);
+        let target_path = rel_target_path.to_logical_path(&self.sync_path);
 
         if let Some(parent) = target_path.parent() {
             fs::create_dir_all(parent).await.with_context(|| {
@@ -97,11 +88,29 @@ impl SyncBackend for StudioBackend {
             .await
             .with_context(|| format!("Failed to write asset to: {}", target_path.display()))?;
 
-        let url_path = hash_rel_path.to_string_lossy().replace('\\', "/");
-
         Ok(Some(BackendSyncResult::Studio(format!(
             "rbxasset://{}/{}",
-            self.identifier, url_path
+            self.identifier, rel_target_path
         ))))
     }
+}
+
+fn get_content_path() -> anyhow::Result<PathBuf> {
+    if let Ok(var) = env::var("ROBLOX_CONTENT_PATH") {
+        let path = PathBuf::from(var);
+
+        if path.exists() {
+            debug!("Using environment variable content path: {path:?}");
+            return Ok(path);
+        } else {
+            bail!("Content path `{}` does not exist", path.display());
+        }
+    }
+
+    let studio = RobloxStudio::locate()?;
+    let path = studio.content_path();
+
+    debug!("Using auto-detected content path: {path:?}");
+
+    Ok(path.to_owned())
 }

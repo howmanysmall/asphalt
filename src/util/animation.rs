@@ -3,12 +3,13 @@ use std::io::Cursor;
 use anyhow::{Context, bail};
 use rbx_xml::DecodeOptions;
 
-use crate::asset::ModelFileFormat;
+use crate::asset::RobloxModelFormat;
 
-pub fn get_animation(data: &[u8], format: &ModelFileFormat) -> anyhow::Result<Vec<u8>> {
+#[allow(dead_code)]
+pub fn get_animation(data: &[u8], format: &RobloxModelFormat) -> anyhow::Result<Vec<u8>> {
     let dom = match format {
-        ModelFileFormat::Binary => rbx_binary::from_reader(data)?,
-        ModelFileFormat::Xml => rbx_xml::from_reader(data, DecodeOptions::new())?,
+        RobloxModelFormat::Binary => rbx_binary::from_reader(data)?,
+        RobloxModelFormat::Xml => rbx_xml::from_reader(data, DecodeOptions::new())?,
     };
 
     let children = dom.root().children();
