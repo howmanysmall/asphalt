@@ -3,10 +3,8 @@ use crate::{
     pack::rect::{Rect, Size},
 };
 use anyhow::bail;
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-};
+use relative_path::{RelativePath, RelativePathBuf};
+use std::{collections::BTreeMap, path::Path};
 
 #[derive(Clone)]
 pub enum Node {
@@ -32,7 +30,7 @@ pub enum Language {
     Luau,
 }
 
-pub fn create_node(source: &BTreeMap<PathBuf, Node>, config: &config::Codegen) -> Node {
+pub fn create_node(source: &BTreeMap<RelativePathBuf, Node>, config: &config::Codegen) -> Node {
     let mut root = Node::Table(BTreeMap::new());
 
     for (path, node) in source {
@@ -65,7 +63,7 @@ pub fn create_node(source: &BTreeMap<PathBuf, Node>, config: &config::Codegen) -
 }
 
 fn normalize_path_components(
-    path: &Path,
+    path: &RelativePath,
     strip_extensions: bool,
     convention: &config::AssetNamingConvention,
 ) -> Vec<String> {
@@ -78,10 +76,10 @@ fn normalize_path_components(
             if let Some(stem) = as_path.file_stem() {
                 stem.to_string_lossy().to_string()
             } else {
-                comp.to_string_lossy().to_string()
+                comp.to_string()
             }
         } else {
-            comp.to_string_lossy().to_string()
+            comp.to_string()
         };
 
         components.push(convert_asset_name(&component_str, convention));
@@ -90,7 +88,7 @@ fn normalize_path_components(
 }
 
 fn normalize_path_string(
-    path: &Path,
+    path: &RelativePath,
     strip_extensions: bool,
     convention: &config::AssetNamingConvention,
 ) -> String {
@@ -98,14 +96,14 @@ fn normalize_path_string(
         && let (Some(file_name), Some(parent)) = (path.file_name(), path.parent())
         && let Some(stem) = Path::new(file_name).file_stem()
     {
-        let parent_str = parent.to_string_lossy();
+        let parent_str = parent.to_string();
         if parent_str.is_empty() || parent_str == "." {
-            stem.to_string_lossy().into_owned()
+            stem.to_string_lossy().to_string()
         } else {
             format!("{}/{}", parent_str, stem.to_string_lossy())
         }
     } else {
-        path.to_string_lossy().into_owned()
+        path.to_string()
     };
 
     convert_asset_name(&path_str, convention)

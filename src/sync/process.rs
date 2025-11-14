@@ -24,7 +24,7 @@ pub async fn process(
             let state = state.clone();
             let pb = pb.clone();
             async move {
-                let file_name = asset.path.display().to_string();
+                let file_name = asset.path.to_string();
                 pb.set_msg(&file_name);
 
                 match asset.process(state.font_db.clone(), bleed, optimize).await {

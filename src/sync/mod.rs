@@ -12,17 +12,17 @@ use backend::BackendSyncResult;
 use indicatif::MultiProgress;
 use log::{info, warn};
 use owo_colors::OwoColorize;
+use relative_path::RelativePathBuf;
 use resvg::usvg::fontdb;
 use std::{
     collections::{BTreeMap, HashMap},
-    path::PathBuf,
     sync::Arc,
 };
 use tokio::{
     fs,
     sync::mpsc::{self, Receiver, Sender},
 };
-use walk::{DuplicateResult, WalkResult};
+use walk::{DuplicateFile, WalkedFile};
 
 mod backend;
 mod codegen;
@@ -103,7 +103,7 @@ pub async fn sync(multi_progress: MultiProgress, args: SyncArgs) -> Result<()> {
         client: WebApiClient::new(auth, config.creator, args.expected_price),
     });
 
-    let mut duplicate_assets = HashMap::<String, Vec<DuplicateResult>>::new();
+    let mut duplicate_assets = HashMap::<String, Vec<DuplicateFile>>::new();
 
     for (input_name, input) in &config.inputs {
         let walk_results = walk::walk(state.clone(), input_name.clone(), input).await?;
@@ -113,10 +113,10 @@ pub async fn sync(multi_progress: MultiProgress, args: SyncArgs) -> Result<()> {
 
         for result in walk_results {
             match result {
-                WalkResult::New(asset) => {
+                WalkedFile::New(asset) => {
                     new_assets.push(asset);
                 }
-                WalkResult::Existing(existing) => {
+                WalkedFile::Existing(existing) => {
                     if args.dry_run {
                         continue;
                     }
@@ -153,12 +153,11 @@ pub async fn sync(multi_progress: MultiProgress, args: SyncArgs) -> Result<()> {
                         })
                         .await?;
                 }
-                WalkResult::Duplicate(dupe) => {
+                WalkedFile::Duplicate(dupe) => {
                     if input.warn_each_duplicate {
                         warn!(
                             "Duplicate file found: {} (original at {})",
-                            dupe.path.display(),
-                            dupe.original_path.display()
+                            dupe.path, dupe.original_path
                         );
                     }
 
@@ -168,24 +167,12 @@ pub async fn sync(multi_progress: MultiProgress, args: SyncArgs) -> Result<()> {
 
                     dupe_count += 1;
 
-                    let original_path = dupe
-                        .original_path
-                        .strip_prefix(input.path.get_prefix())
-                        .unwrap()
-                        .to_owned();
-
-                    let path = dupe
-                        .path
-                        .strip_prefix(input.path.get_prefix())
-                        .unwrap()
-                        .to_owned();
-
                     duplicate_assets
                         .entry(input_name.clone())
                         .or_default()
-                        .push(DuplicateResult {
-                            path,
-                            original_path,
+                        .push(DuplicateFile {
+                            original_path: dupe.original_path,
+                            path: dupe.path,
                         });
                 }
             }
@@ -205,7 +192,7 @@ pub async fn sync(multi_progress: MultiProgress, args: SyncArgs) -> Result<()> {
                     println!(
                         "  {} {} {}",
                         "+".green(),
-                        asset.path.display(),
+                        asset.path,
                         format!("({:.1} KB)", size_kb).dimmed()
                     );
                 }
@@ -253,7 +240,7 @@ pub async fn sync(multi_progress: MultiProgress, args: SyncArgs) -> Result<()> {
             processed_assets
         };
 
-        perform::perform(&final_assets, state.clone(), input_name.clone(), input).await?;
+        perform::perform(&final_assets, state.clone(), input_name.clone()).await?;
     }
 
     drop(state);
@@ -275,9 +262,7 @@ pub async fn sync(multi_progress: MultiProgress, args: SyncArgs) -> Result<()> {
 
         for dupe in dupes {
             let original = source.get(&dupe.original_path).unwrap();
-
-            let path = dupe.path.to_string_lossy().replace('\\', "/");
-            source.insert(path.into(), original.clone());
+            source.insert(dupe.path, original.clone());
         }
     }
 
@@ -345,7 +330,7 @@ pub async fn sync(multi_progress: MultiProgress, args: SyncArgs) -> Result<()> {
 
 pub struct SyncResult {
     hash: String,
-    path: PathBuf,
+    path: RelativePathBuf,
     input_name: String,
     backend: BackendSyncResult,
 }
@@ -362,7 +347,6 @@ async fn handle_sync_results(
             && result
                 .path
                 .file_name()
-                .and_then(|n| n.to_str())
                 .is_some_and(|name| name.contains("-sheet-"));
 
         if let BackendSyncResult::Cloud(asset_id) = result.backend {
@@ -439,11 +423,7 @@ async fn handle_atlas_upload(
     };
 
     // Extract page index from filename (format: "{input}-sheet-{N}.png")
-    let filename = result
-        .path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .context("Invalid atlas filename")?;
+    let filename = result.path.file_name().context("Invalid atlas filename")?;
 
     let page_index = filename
         .strip_suffix(".png")
@@ -509,15 +489,16 @@ async fn handle_atlas_upload(
 
 struct CodegenInsertion {
     input_name: String,
-    asset_path: PathBuf,
+    asset_path: RelativePathBuf,
     node: codegen::Node,
 }
 
 async fn collect_codegen_insertions(
     mut rx: Receiver<CodegenInsertion>,
     inputs: HashMap<String, Input>,
-) -> anyhow::Result<HashMap<String, BTreeMap<PathBuf, codegen::Node>>> {
-    let mut inputs_to_sources: HashMap<String, BTreeMap<PathBuf, codegen::Node>> = HashMap::new();
+) -> anyhow::Result<HashMap<String, BTreeMap<RelativePathBuf, codegen::Node>>> {
+    let mut inputs_to_sources: HashMap<String, BTreeMap<RelativePathBuf, codegen::Node>> =
+        HashMap::new();
 
     for (input_name, input) in &inputs {
         let web_count = input.web.len();
@@ -525,12 +506,11 @@ async fn collect_codegen_insertions(
             info!("Including {web_count} web asset(s) from configuration for input '{input_name}'");
         }
 
-        for (path, asset) in &input.web {
+        for (rel_path, asset) in &input.web {
             let entry = inputs_to_sources.entry(input_name.clone()).or_default();
-            let path = PathBuf::from(path.replace('\\', "/"));
 
             entry.insert(
-                path,
+                rel_path.clone(),
                 codegen::Node::String(format!("rbxassetid://{}", asset.id)),
             );
         }
@@ -541,18 +521,7 @@ async fn collect_codegen_insertions(
             .entry(insertion.input_name.clone())
             .or_default();
 
-        let input = inputs
-            .get(&insertion.input_name)
-            .context("Failed to find input for codegen input")?;
-
-        let path = insertion
-            .asset_path
-            .strip_prefix(input.path.get_prefix())
-            .unwrap();
-
-        let path = path.to_string_lossy().replace('\\', "/");
-
-        source.insert(path.into(), insertion.node);
+        source.insert(insertion.asset_path, insertion.node);
     }
 
     Ok(inputs_to_sources)
@@ -638,7 +607,7 @@ fn apply_pack_overrides(base_options: Option<&PackOptions>, args: &SyncArgs) -> 
 
 struct PackingMetadata {
     manifest: pack::manifest::AtlasManifest,
-    sprite_to_path: HashMap<String, PathBuf>,
+    sprite_to_path: HashMap<String, RelativePathBuf>,
     sprite_to_hash: HashMap<String, String>,
 }
 
@@ -675,7 +644,7 @@ async fn handle_packing(
     let mut sprite_to_path = HashMap::new();
     let mut sprite_to_hash = HashMap::new();
     for asset in &packable_assets {
-        if let Some(name) = asset.path.file_stem().and_then(|s| s.to_str()) {
+        if let Some(name) = asset.path.file_stem() {
             sprite_to_path.insert(name.to_string(), asset.path.clone());
             sprite_to_hash.insert(name.to_string(), asset.hash.clone());
         }
@@ -694,7 +663,7 @@ async fn handle_packing(
     // Convert atlases to assets (keep in memory, will be uploaded by backend)
     for atlas in &pack_result.atlases {
         let filename = format!("{}-sheet-{}.png", input_name, atlas.page_index);
-        let sync_path = input.path.get_prefix().join(&filename);
+        let sync_path = RelativePathBuf::from(filename);
         let atlas_asset = Asset::new(sync_path, atlas.image_data.clone())?;
         result_assets.push(atlas_asset);
     }

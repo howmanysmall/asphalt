@@ -114,19 +114,14 @@ impl Packer {
 
             // Load image to get dimensions
             let image = image::load_from_memory(&asset.data)
-                .with_context(|| format!("Failed to load image: {}", asset.path.display()))?;
+                .with_context(|| format!("Failed to load image: {}", asset.path))?;
 
             let size = Size {
                 width: image.width(),
                 height: image.height(),
             };
 
-            let name = asset
-                .path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown")
-                .to_string();
+            let name = asset.path.file_stem().unwrap_or("unknown").to_string();
 
             // Handle deduplication
             if self.options.dedupe {
@@ -143,7 +138,7 @@ impl Packer {
 
             sprites.push(Sprite {
                 name,
-                data: asset.data.clone(),
+                data: asset.data.to_vec(),
                 size,
                 hash: asset.hash.clone(),
             });
