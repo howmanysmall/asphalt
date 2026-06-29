@@ -156,8 +156,17 @@ mod tests {
         let optimized_img = image::load_from_memory(&result).unwrap();
         assert_eq!(original_decoded.dimensions(), optimized_img.dimensions());
         // Spot-check a few pixels
-        assert_eq!(original_decoded.get_pixel(0, 0), optimized_img.get_pixel(0, 0));
-        assert_eq!(original_decoded.get_pixel(25, 25), optimized_img.get_pixel(25, 25));
-        assert_eq!(original_decoded.get_pixel(49, 49), optimized_img.get_pixel(49, 49));
+        assert_eq!(
+            original_decoded.get_pixel(0, 0),
+            optimized_img.get_pixel(0, 0)
+        );
+        assert_eq!(
+            original_decoded.get_pixel(25, 25),
+            optimized_img.get_pixel(25, 25)
+        );
+        assert_eq!(
+            original_decoded.get_pixel(49, 49),
+            optimized_img.get_pixel(49, 49)
+        );
     }
 }

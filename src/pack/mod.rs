@@ -565,7 +565,8 @@ mod tests {
         let audio_asset = Asset::new(
             RelativePathBuf::from("sound.mp3"),
             Bytes::from_static(b"mp3-data"),
-        ).unwrap();
+        )
+        .unwrap();
         let assets = [img_asset, audio_asset];
         let sprites = packer.assets_to_sprites(&assets).unwrap();
         assert_eq!(sprites.len(), 1, "Should only include image assets");
@@ -766,7 +767,10 @@ mod tests {
                 assert!(
                     !rects[i].intersects(&rects[j]),
                     "Sprite {} and {} overlap: {:?} vs {:?}",
-                    i, j, rects[i], rects[j]
+                    i,
+                    j,
+                    rects[i],
+                    rects[j]
                 );
             }
         }
@@ -810,7 +814,10 @@ mod tests {
         let mut sprite = Sprite {
             name: "centered".to_string(),
             data,
-            size: Size { width: 32, height: 32 },
+            size: Size {
+                width: 32,
+                height: 32,
+            },
             hash: Hash::new_from_bytes(b"test"),
         };
         let original_rect = packer.trim_sprite(&mut sprite);
@@ -833,7 +840,10 @@ mod tests {
         let mut sprite = Sprite {
             name: "transparent".to_string(),
             data,
-            size: Size { width: 16, height: 16 },
+            size: Size {
+                width: 16,
+                height: 16,
+            },
             hash: Hash::new_from_bytes(b"test"),
         };
         let result = packer.trim_sprite(&mut sprite);
@@ -851,7 +861,10 @@ mod tests {
         let mut sprite = Sprite {
             name: "opaque".to_string(),
             data,
-            size: Size { width: 16, height: 16 },
+            size: Size {
+                width: 16,
+                height: 16,
+            },
             hash: Hash::new_from_bytes(b"test"),
         };
         let result = packer.trim_sprite(&mut sprite);
@@ -865,7 +878,10 @@ mod tests {
         let sprite = Sprite {
             name: "test".to_string(),
             data,
-            size: Size { width: 16, height: 16 },
+            size: Size {
+                width: 16,
+                height: 16,
+            },
             hash: Hash::new_from_bytes(b"test"),
         };
         let packed = PackedSprite {
@@ -874,7 +890,10 @@ mod tests {
             trimmed: false,
             sprite_source_size: None,
         };
-        let atlas_size = Size { width: 64, height: 64 };
+        let atlas_size = Size {
+            width: 64,
+            height: 64,
+        };
         let result = packer.render_atlas(&[packed], atlas_size).unwrap();
         // Should be valid PNG
         assert!(result.starts_with(b"\x89PNG"));
@@ -900,7 +919,10 @@ mod tests {
         let sprite = Sprite {
             name: "green".to_string(),
             data,
-            size: Size { width: 8, height: 8 },
+            size: Size {
+                width: 8,
+                height: 8,
+            },
             hash: Hash::new_from_bytes(b"green"),
         };
         let packed = PackedSprite {
@@ -909,7 +931,10 @@ mod tests {
             trimmed: false,
             sprite_source_size: None,
         };
-        let atlas_size = Size { width: 32, height: 32 };
+        let atlas_size = Size {
+            width: 32,
+            height: 32,
+        };
         let result = packer.render_atlas(&[packed], atlas_size).unwrap();
         let decoded = image::load_from_memory(&result).unwrap();
         // Check pixel at sprite position is green
@@ -1004,7 +1029,9 @@ mod tests {
                 assert!(
                     x_end <= 128 && y_end <= 128,
                     "Sprite '{}' exceeds atlas bounds: ends at ({}, {})",
-                    ps.sprite.name, x_end, y_end
+                    ps.sprite.name,
+                    x_end,
+                    y_end
                 );
             }
         }
@@ -1027,7 +1054,9 @@ mod tests {
         assert_eq!(result.atlases.len(), 1);
         // With padding, sprites should have at least padding pixels between them
         let sprites = &result.atlases[0].sprites;
-        let gap_x = (sprites[1].rect.x as i32 - sprites[0].rect.x as i32 - sprites[0].rect.width as i32).unsigned_abs();
+        let gap_x =
+            (sprites[1].rect.x as i32 - sprites[0].rect.x as i32 - sprites[0].rect.width as i32)
+                .unsigned_abs();
         assert!(gap_x >= 4 || gap_x == 0);
     }
 }

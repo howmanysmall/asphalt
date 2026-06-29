@@ -282,7 +282,12 @@ mod tests {
 
     #[test]
     fn test_asset_new_image_extensions() {
-        for (ext, data) in [("png", &b"dummy-png-data"[..]), ("jpg", &b"dummy-jpg-data"[..]), ("bmp", &b"dummy-bmp-data"[..]), ("tga", &b"dummy-tga-data"[..])] {
+        for (ext, data) in [
+            ("png", &b"dummy-png-data"[..]),
+            ("jpg", &b"dummy-jpg-data"[..]),
+            ("bmp", &b"dummy-bmp-data"[..]),
+            ("tga", &b"dummy-tga-data"[..]),
+        ] {
             let path = RelativePathBuf::from(format!("test.{ext}"));
             let asset = Asset::new(path, Bytes::from_static(data)).unwrap();
             assert_eq!(asset.ext, ext);
@@ -292,7 +297,12 @@ mod tests {
 
     #[test]
     fn test_asset_new_audio_extensions() {
-        for (ext, data) in [("mp3", &b"dummy-mp3-data"[..]), ("ogg", &b"dummy-ogg-data"[..]), ("flac", &b"dummy-flac-data"[..]), ("wav", &b"dummy-wav-data"[..])] {
+        for (ext, data) in [
+            ("mp3", &b"dummy-mp3-data"[..]),
+            ("ogg", &b"dummy-ogg-data"[..]),
+            ("flac", &b"dummy-flac-data"[..]),
+            ("wav", &b"dummy-wav-data"[..]),
+        ] {
             let path = RelativePathBuf::from(format!("test.{ext}"));
             let asset = Asset::new(path, Bytes::from_static(data)).unwrap();
             assert_eq!(asset.ext, ext);
@@ -302,7 +312,11 @@ mod tests {
 
     #[test]
     fn test_asset_new_model_extensions() {
-        for (ext, data) in [("fbx", &b"dummy-fbx-data"[..]), ("gltf", &b"dummy-gltf-data"[..]), ("glb", &b"dummy-glb-data"[..])] {
+        for (ext, data) in [
+            ("fbx", &b"dummy-fbx-data"[..]),
+            ("gltf", &b"dummy-gltf-data"[..]),
+            ("glb", &b"dummy-glb-data"[..]),
+        ] {
             let path = RelativePathBuf::from(format!("test.{ext}"));
             let asset = Asset::new(path, Bytes::from_static(data)).unwrap();
             assert_eq!(asset.ext, ext);
@@ -312,7 +326,10 @@ mod tests {
 
     #[test]
     fn test_asset_new_video_extensions() {
-        for (ext, data) in [("mp4", &b"dummy-mp4-data"[..]), ("mov", &b"dummy-mov-data"[..])] {
+        for (ext, data) in [
+            ("mp4", &b"dummy-mp4-data"[..]),
+            ("mov", &b"dummy-mov-data"[..]),
+        ] {
             let path = RelativePathBuf::from(format!("test.{ext}"));
             let asset = Asset::new(path, Bytes::from_static(data)).unwrap();
             assert_eq!(asset.ext, ext);
@@ -355,9 +372,18 @@ mod tests {
     fn test_asset_type_file_types() {
         assert_eq!(AssetType::Animation.file_type(), "model/x-rbxm");
         assert_eq!(AssetType::Model(ModelType::Fbx).file_type(), "model/fbx");
-        assert_eq!(AssetType::Model(ModelType::GltfJson).file_type(), "model/gltf+json");
-        assert_eq!(AssetType::Model(ModelType::GltfBinary).file_type(), "model/gltf-binary");
-        assert_eq!(AssetType::Model(ModelType::Roblox).file_type(), "model/x-rbxm");
+        assert_eq!(
+            AssetType::Model(ModelType::GltfJson).file_type(),
+            "model/gltf+json"
+        );
+        assert_eq!(
+            AssetType::Model(ModelType::GltfBinary).file_type(),
+            "model/gltf-binary"
+        );
+        assert_eq!(
+            AssetType::Model(ModelType::Roblox).file_type(),
+            "model/x-rbxm"
+        );
         assert_eq!(AssetType::Image(ImageType::Png).file_type(), "image/png");
         assert_eq!(AssetType::Image(ImageType::Jpg).file_type(), "image/jpeg");
         assert_eq!(AssetType::Image(ImageType::Bmp).file_type(), "image/bmp");
@@ -437,7 +463,10 @@ mod tests {
             "Processed SVG data should be a PNG, got: {:?}",
             &asset.data[..4.min(asset.data.len())]
         );
-        assert!(asset.data.len() > 100, "PNG data should be non-trivial in size");
+        assert!(
+            asset.data.len() > 100,
+            "PNG data should be non-trivial in size"
+        );
 
         let img = image::load_from_memory(&asset.data).unwrap();
         assert_eq!(img.dimensions(), (16, 16), "Output should be 16x16");
@@ -453,6 +482,9 @@ mod tests {
         // re-computed during process(). This is by design — the hash represents
         // the source content identity, not the processed output.
         // is_svg also remains true after processing — it records the original source format.
-        assert!(asset.is_svg, "is_svg should remain true after processing (records source format)");
+        assert!(
+            asset.is_svg,
+            "is_svg should remain true after processing (records source format)"
+        );
     }
 }

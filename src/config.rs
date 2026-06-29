@@ -442,7 +442,10 @@ output_path = "out/icons.luau"
 
         // jsonc is checked before json and toml, so jsonc config should be loaded
         let config = run_async_test(Config::read_from(dir.clone())).unwrap();
-        assert_eq!(config.creator.id, 11111, "JSONC (first in CONFIG_FILES) should be loaded over JSON/TOML");
+        assert_eq!(
+            config.creator.id, 11111,
+            "JSONC (first in CONFIG_FILES) should be loaded over JSON/TOML"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -455,7 +458,10 @@ output_path = "out/icons.luau"
         let result = run_async_test(Config::read_from(dir.clone()));
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("No configuration file found"), "Error should mention missing config: {err}");
+        assert!(
+            err.contains("No configuration file found"),
+            "Error should mention missing config: {err}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -483,17 +489,29 @@ output_path = "out/x.luau"
             "Default codegen style should be Flat, got {:?}",
             config.codegen.style
         );
-        assert!(!config.codegen.typescript, "Default typescript should be false");
-        assert!(!config.codegen.strip_extensions, "Default strip_extensions should be false");
+        assert!(
+            !config.codegen.typescript,
+            "Default typescript should be false"
+        );
+        assert!(
+            !config.codegen.strip_extensions,
+            "Default strip_extensions should be false"
+        );
         assert!(!config.codegen.content, "Default content should be false");
         assert!(
-            matches!(config.codegen.asset_naming_convention, AssetNamingConvention::Preserve),
+            matches!(
+                config.codegen.asset_naming_convention,
+                AssetNamingConvention::Preserve
+            ),
             "Default asset naming convention should be Preserve"
         );
         // Input defaults
         let input = config.inputs.get("x").unwrap();
         assert!(input.bleed, "Default bleed should be true");
-        assert!(input.warn_each_duplicate, "Default warn_each_duplicate should be true");
+        assert!(
+            input.warn_each_duplicate,
+            "Default warn_each_duplicate should be true"
+        );
         assert!(input.pack.is_none(), "Default pack should be None");
 
         let _ = fs::remove_dir_all(&dir);

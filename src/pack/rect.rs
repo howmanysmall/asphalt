@@ -318,7 +318,10 @@ mod tests {
 
     use proptest::prelude::*;
 
-    fn rect_value(width_strat: impl Strategy<Value = u32>, height_strat: impl Strategy<Value = u32>) -> impl Strategy<Value = Rect> {
+    fn rect_value(
+        width_strat: impl Strategy<Value = u32>,
+        height_strat: impl Strategy<Value = u32>,
+    ) -> impl Strategy<Value = Rect> {
         (0u32..1000, 0u32..1000, width_strat, height_strat)
             .prop_map(|(x, y, w, h)| Rect::new(x, y, w.max(1), h.max(1)))
     }

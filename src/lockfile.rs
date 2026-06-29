@@ -444,16 +444,10 @@ mod tests {
         let hash_str = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2";
         let mut inputs = BTreeMap::new();
         let mut entries = BTreeMap::new();
-        entries.insert(
-            hash_str.to_string(),
-            LockfileV2Entry { asset_id: 42 },
-        );
+        entries.insert(hash_str.to_string(), LockfileV2Entry { asset_id: 42 });
         inputs.insert("images".to_string(), entries);
 
-        let v2 = LockfileV2 {
-            version: 2,
-            inputs,
-        };
+        let v2 = LockfileV2 { version: 2, inputs };
 
         let lockfile = migrate_from_v2(&v2).unwrap();
         assert_eq!(lockfile.count_entries(), 1);
@@ -474,10 +468,7 @@ mod tests {
         );
         inputs.insert("test".to_string(), entries);
 
-        let v2 = LockfileV2 {
-            version: 2,
-            inputs,
-        };
+        let v2 = LockfileV2 { version: 2, inputs };
 
         let result = migrate_from_v2(&v2);
         assert!(result.is_err());
@@ -498,10 +489,7 @@ mod tests {
         entries_b.insert(hash_b.to_string(), LockfileV2Entry { asset_id: 20 });
         inputs.insert("sounds".to_string(), entries_b);
 
-        let v2 = LockfileV2 {
-            version: 2,
-            inputs,
-        };
+        let v2 = LockfileV2 { version: 2, inputs };
 
         let lockfile = migrate_from_v2(&v2).unwrap();
         assert_eq!(lockfile.count_entries(), 2);
@@ -520,17 +508,11 @@ mod tests {
         let mut entries = BTreeMap::new();
         entries.insert(
             PathBuf::from("old/path.png"),
-            OldLockfileEntry {
-                hash,
-                asset_id: 77,
-            },
+            OldLockfileEntry { hash, asset_id: 77 },
         );
         inputs.insert("sprites".to_string(), entries);
 
-        let v1 = LockfileV1 {
-            version: 1,
-            inputs,
-        };
+        let v1 = LockfileV1 { version: 1, inputs };
 
         let lockfile = migrate_from_v1(&v1);
         assert_eq!(lockfile.count_entries(), 1);
@@ -562,10 +544,7 @@ mod tests {
         );
         inputs.insert("assets".to_string(), entries);
 
-        let v1 = LockfileV1 {
-            version: 1,
-            inputs,
-        };
+        let v1 = LockfileV1 { version: 1, inputs };
 
         let lockfile = migrate_from_v1(&v1);
         assert_eq!(lockfile.count_entries(), 2);
@@ -581,10 +560,7 @@ mod tests {
         entries.insert(hash_str.to_string(), LockfileV2Entry { asset_id: 99 });
         inputs.insert("test".to_string(), entries);
 
-        let raw = RawLockfile::V2(LockfileV2 {
-            version: 2,
-            inputs,
-        });
+        let raw = RawLockfile::V2(LockfileV2 { version: 2, inputs });
 
         let lockfile = raw.migrate(None).await.unwrap();
         assert_eq!(lockfile.count_entries(), 1);
@@ -597,7 +573,12 @@ mod tests {
         let raw = RawLockfile::V3(Lockfile::default());
         let result = raw.migrate(None).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("already up to date"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("already up to date")
+        );
     }
 
     #[tokio::test]
@@ -628,20 +609,32 @@ mod tests {
         let h1 = Hash::new_from_bytes(b"one");
         let h2 = Hash::new_from_bytes(b"two");
 
-        lockfile.insert("a", &h1, LockfileEntry {
-            asset_id: 1,
-            sprite_info: None,
-        });
-        lockfile.insert("a", &h2, LockfileEntry {
-            asset_id: 2,
-            sprite_info: None,
-        });
+        lockfile.insert(
+            "a",
+            &h1,
+            LockfileEntry {
+                asset_id: 1,
+                sprite_info: None,
+            },
+        );
+        lockfile.insert(
+            "a",
+            &h2,
+            LockfileEntry {
+                asset_id: 2,
+                sprite_info: None,
+            },
+        );
         assert_eq!(lockfile.count_entries(), 2);
 
-        lockfile.insert("b", &h1, LockfileEntry {
-            asset_id: 3,
-            sprite_info: None,
-        });
+        lockfile.insert(
+            "b",
+            &h1,
+            LockfileEntry {
+                asset_id: 3,
+                sprite_info: None,
+            },
+        );
         assert_eq!(lockfile.count_entries(), 3);
     }
 }

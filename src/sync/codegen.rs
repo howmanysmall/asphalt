@@ -440,7 +440,9 @@ mod tests {
     }
 
     fn starts_with_ident_char(s: &str) -> bool {
-        s.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        s.chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
     }
 
     fn is_valid_ident(s: &str) -> bool {
