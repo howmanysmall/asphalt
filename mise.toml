@@ -1,0 +1,28 @@
+[env]
+PROJECT_NAME = "{{ config_root | basename }}"
+_.file = { path = ".env" }
+_.path = ["{{config_root}}/node_modules/.bin", "{{cwd}}/node_modules/.bin", "./bin"]
+
+[settings]
+auto_install = false
+lockfile = true
+experimental = true
+cargo.binstall_native = true
+
+[tools]
+rust = "1.97.1"
+cargo-dist = "latest"
+pnpm = "12.0.0"
+ni = "latest"
+hk = "latest"
+betterleaks = "latest"
+pkl = "latest"
+vale = "latest"
+cargo-release = "latest"
+actionlint = "latest"
+pinact = "latest"
+rumdl = "latest"
+shellcheck = "latest"
+shfmt = "latest"
+tombi = "latest"
+zizmor = "latest"
