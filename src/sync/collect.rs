@@ -1,0 +1,250 @@
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use relative_path::RelativePathBuf;
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
+use tokio::sync::mpsc::UnboundedReceiver;
+
+use crate::{
+    asset::AssetRef,
+    cli::SyncTarget,
+    config::InputMap,
+    hash::Hash,
+    lockfile::{Lockfile, LockfileEntry, SpriteInfo},
+    sync::codegen::{self, Node, NodeSource},
+};
+
+pub struct CollectResults {
+    pub new_lockfile: Lockfile,
+    pub input_sources: HashMap<String, NodeSource>,
+    pub new_count: u64,
+    pub any_failed: bool,
+}
+
+pub async fn collect_events(
+    mut rx: UnboundedReceiver<super::Event>,
+    target: SyncTarget,
+    inputs: InputMap,
+    mp: MultiProgress,
+    base_dir: &std::path::Path,
+) -> anyhow::Result<CollectResults> {
+    let mut new_lockfile = Lockfile::default();
+    let mut hash_refs = HashMap::<(String, Hash), (AssetRef, Option<SpriteInfo>)>::new();
+    let mut pending_duplicates = HashMap::<(String, Hash), Vec<RelativePathBuf>>::new();
+
+    let mut input_sources: HashMap<String, NodeSource> = HashMap::new();
+    for (input_name, input) in inputs {
+        for (rel_path, web_asset) in &input.web {
+            input_sources.entry(input_name.clone()).or_default().insert(
+                rel_path.clone(),
+                Node::String(format!("rbxassetid://{}", web_asset.id)),
+            );
+        }
+    }
+
+    let mut progress = Progress::new(mp, target);
+
+    let mut seen_paths = HashSet::new();
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            super::Event::Discovered(path) => {
+                if !seen_paths.contains(&path) {
+                    progress.discovered += 1;
+                }
+            }
+            super::Event::InFlight(path) => {
+                if !seen_paths.contains(&path) {
+                    progress.in_flight.insert(path.clone());
+                }
+            }
+            super::Event::Finished {
+                state,
+                input_name,
+                path,
+                rel_path,
+                hash,
+                asset_ref,
+                sprite_info,
+            } => {
+                seen_paths.insert(path.clone());
+
+                match state {
+                    super::EventState::Duplicate => {
+                        let key = (input_name.clone(), hash);
+
+                        if let Some((asset_ref, sprite_info)) = hash_refs.get(&key) {
+                            let node = make_node(asset_ref, sprite_info.as_ref());
+
+                            input_sources
+                                .entry(input_name.clone())
+                                .or_default()
+                                .insert(rel_path.clone(), node);
+                        } else {
+                            pending_duplicates
+                                .entry(key)
+                                .or_default()
+                                .push(rel_path.clone());
+                        }
+
+                        progress.dupes += 1;
+                    }
+                    super::EventState::Synced { new } => {
+                        if let Some(asset_ref) = asset_ref {
+                            let key = (input_name.clone(), hash);
+                            hash_refs.insert(key.clone(), (asset_ref.clone(), sprite_info.clone()));
+
+                            let node = make_node(&asset_ref, sprite_info.as_ref());
+
+                            let source = input_sources.entry(input_name.clone()).or_default();
+                            source.insert(rel_path.clone(), node);
+
+                            if let Some(rel_paths) = pending_duplicates.remove(&key) {
+                                for rel_path in rel_paths {
+                                    let node = make_node(&asset_ref, sprite_info.as_ref());
+                                    source.insert(rel_path, node);
+                                }
+                            }
+
+                            if let AssetRef::Cloud(id) = asset_ref {
+                                new_lockfile.insert(
+                                    &input_name,
+                                    &hash,
+                                    LockfileEntry {
+                                        asset_id: id,
+                                        sprite_info,
+                                    },
+                                );
+                            }
+                        }
+                        progress.synced += 1;
+
+                        if new {
+                            progress.new += 1;
+                            if target.write_on_sync() {
+                                new_lockfile.write_to(base_dir).await?;
+                            }
+                        }
+                    }
+                }
+
+                progress.in_flight.remove(&path);
+            }
+            super::Event::Failed(path) => {
+                progress.failed += 1;
+                progress.in_flight.remove(&path);
+            }
+        }
+
+        progress.update();
+    }
+
+    progress.finish();
+
+    Ok(CollectResults {
+        new_lockfile,
+        input_sources,
+        new_count: progress.new,
+        any_failed: progress.failed > 0,
+    })
+}
+
+fn make_node(asset_ref: &AssetRef, sprite_info: Option<&SpriteInfo>) -> Node {
+    match sprite_info {
+        Some(info) => Node::AtlasSprite(codegen::AtlasSpriteData {
+            image: asset_ref.to_string(),
+            rect: info.rect,
+            size: info.source_size,
+            trimmed: info.trimmed,
+            sprite_source_size: info.sprite_source_size,
+        }),
+        None => Node::String(asset_ref.to_string()),
+    }
+}
+
+struct Progress {
+    inner: ProgressBar,
+    target: SyncTarget,
+    in_flight: HashSet<PathBuf>,
+    discovered: u64,
+    synced: u64,
+    new: u64,
+    dupes: u64,
+    failed: u64,
+}
+
+impl Progress {
+    fn get_style(finished: bool) -> ProgressStyle {
+        ProgressStyle::default_bar()
+            .template(&format!(
+                "{{prefix:.{prefix_color}.bold}}{bar} {{pos}}/{{len}} assets: ({{msg}})",
+                prefix_color = if finished { "green" } else { "cyan" },
+                bar = if finished { "" } else { " [{bar:40}]" },
+            ))
+            .unwrap()
+            .progress_chars("=> ")
+    }
+
+    fn new(mp: MultiProgress, target: SyncTarget) -> Self {
+        let spinner = mp.add(ProgressBar::new_spinner());
+        spinner.set_style(Progress::get_style(false));
+        spinner.set_prefix("Syncing");
+        spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+
+        Self {
+            inner: spinner,
+            target,
+            in_flight: HashSet::new(),
+            discovered: 0,
+            synced: 0,
+            new: 0,
+            dupes: 0,
+            failed: 0,
+        }
+    }
+
+    fn get_msg(&self) -> String {
+        let mut parts = Vec::new();
+
+        if self.new > 0 {
+            let target_msg = match self.target {
+                SyncTarget::Cloud { dry_run: true } => "checked",
+                SyncTarget::Cloud { dry_run: false } => "uploaded",
+                SyncTarget::Studio | SyncTarget::Debug => "written",
+            };
+            parts.push(format!("{} {}", self.new, target_msg));
+        }
+        let noop = self.synced - self.new;
+        if noop > 0 {
+            parts.push(format!("{} no-op", noop));
+        }
+        if self.dupes > 0 {
+            parts.push(format!("{} duplicates", self.dupes));
+        }
+
+        let in_flight = self.in_flight.len();
+        if in_flight > 0 {
+            parts.push(format!("{} processing", in_flight));
+        }
+
+        let failed = self.failed;
+        if failed > 0 {
+            parts.push(format!("{} failed", failed));
+        }
+
+        parts.join(", ")
+    }
+
+    fn update(&self) {
+        self.inner.set_position(self.synced + self.dupes);
+        self.inner.set_length(self.discovered);
+        self.inner.set_message(self.get_msg());
+    }
+
+    fn finish(&self) {
+        self.inner.set_prefix("Synced");
+        self.inner.set_style(Progress::get_style(true));
+        self.inner.finish();
+    }
+}

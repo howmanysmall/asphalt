@@ -1,0 +1,10 @@
+# pinact only pins semver refs. These actions intentionally track floating
+# branches (dtolnay/rust-toolchain@stable tracks the latest stable Rust
+# toolchain; bnjbvr/cargo-machete@main tracks its HEAD), so pinning them
+# would freeze their semantics. Tell pinact to skip them entirely.
+version: 3
+ignore_actions:
+  - name: dtolnay/rust-toolchain
+    ref: stable
+  - name: bnjbvr/cargo-machete
+    ref: main

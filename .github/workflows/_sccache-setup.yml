@@ -1,8 +1,8 @@
 - name: Install sccache
-  uses: mozilla-actions/sccache-action@v0.0.9
+  uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
 
 - name: Configure sccache for macOS builds
   if: ${{ runner.os == 'macOS' }}
   run: |
-    echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-    echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+    echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+    echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"

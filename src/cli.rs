@@ -1,7 +1,8 @@
 use crate::config::{CreatorType, PackAlgorithm, PackSort};
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use clap_complete::Shell;
 use clap_verbosity_flag::{InfoLevel, Verbosity};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(version, about = "Upload and reference Roblox assets in code.")]
@@ -42,27 +43,35 @@ pub enum Commands {
     List,
 }
 
-#[derive(ValueEnum, Clone, Copy)]
+#[derive(Subcommand, Clone, Copy)]
 pub enum SyncTarget {
-    Cloud,
+    /// Upload assets to Roblox cloud.
+    Cloud {
+        /// Error if assets would be uploaded.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Write assets to the Roblox Studio content folder.
     Studio,
+    /// Write assets to the .asphalt-debug folder.
     Debug,
+}
+
+impl SyncTarget {
+    pub fn write_on_sync(&self) -> bool {
+        matches!(self, SyncTarget::Cloud { dry_run: false })
+    }
 }
 
 #[derive(Args, Clone)]
 pub struct SyncArgs {
     /// Your Open Cloud API key.
-    /// Can also be set with the ASPHALT_API_KEY environment variable.
-    #[arg(short, long)]
+    #[arg(short, long, env = "ASPHALT_API_KEY")]
     pub api_key: Option<String>,
 
     /// Where Asphalt should sync assets to.
-    #[arg(short, long, default_value = "cloud")]
-    pub target: SyncTarget,
-
-    /// Skip asset syncing and only display what assets will be synced.
-    #[arg(long)]
-    pub dry_run: bool,
+    #[command(subcommand)]
+    target: Option<SyncTarget>,
 
     /// Provides Roblox with the amount of Robux that you are willing to spend on each non-free asset upload.
     #[arg(long)]
@@ -116,6 +125,10 @@ pub struct SyncArgs {
     /// Optimize PNG assets with oxipng for smaller file sizes.
     #[arg(long)]
     pub optimize: bool,
+
+    /// Path to the project directory. Defaults to the current directory.
+    #[arg(short, long, default_value = ".")]
+    pub project: PathBuf,
 }
 
 fn parse_size(s: &str) -> Result<(u32, u32), String> {
@@ -132,6 +145,12 @@ fn parse_size(s: &str) -> Result<(u32, u32), String> {
         .map_err(|_| "Height must be a valid number")?;
 
     Ok((width, height))
+}
+
+impl SyncArgs {
+    pub fn target(&self) -> SyncTarget {
+        self.target.unwrap_or(SyncTarget::Cloud { dry_run: false })
+    }
 }
 
 #[derive(Args)]
@@ -169,6 +188,10 @@ pub struct UploadArgs {
 pub struct MigrateLockfileArgs {
     /// The default input name to use. Only applies when upgrading from V0 to V1.
     pub input_name: Option<String>,
+
+    /// Path to the project directory. Defaults to the current directory.
+    #[arg(short, long, default_value = ".")]
+    pub project: PathBuf,
 }
 
 #[derive(Args)]

@@ -8,18 +8,18 @@ use log::LevelFilter;
 use miette::{IntoDiagnostic, WrapErr};
 use migrate_lockfile::migrate_lockfile;
 use schemars::generate::SchemaSettings;
+use std::path::PathBuf;
 use sync::sync;
 use upload::upload;
 
 mod asset;
-mod auth;
 mod cli;
 mod config;
 mod glob;
+mod hash;
 mod lockfile;
 mod migrate_lockfile;
 mod pack;
-mod progress_bar;
 mod sync;
 mod upload;
 mod util;
@@ -50,7 +50,7 @@ async fn main() -> miette::Result<()> {
     log::set_max_level(level);
 
     match args.command {
-        Commands::Sync(args) => sync(multi_progress, args)
+        Commands::Sync(args) => sync(args, multi_progress)
             .await
             .map_err(|e| miette::miette!(e)),
         Commands::Upload(args) => upload(args).await.map_err(|e| miette::miette!(e)),
@@ -106,7 +106,7 @@ fn generate_completions(args: cli::CompletionsArgs) {
 async fn check_config() -> anyhow::Result<()> {
     use anyhow::Context;
 
-    let config = Config::read()
+    let config = Config::read_from(PathBuf::from("."))
         .await
         .context("Failed to read configuration file")?;
 
@@ -115,7 +115,7 @@ async fn check_config() -> anyhow::Result<()> {
     println!("  Inputs: {}", config.inputs.len());
 
     for (name, input) in &config.inputs {
-        println!("    - {}: {}", name, input.path.get_prefix().display());
+        println!("    - {}: {}", name, input.include.get_prefix().display());
     }
 
     Ok(())
@@ -125,7 +125,7 @@ async fn list_assets() -> anyhow::Result<()> {
     use anyhow::Context;
     use walkdir::WalkDir;
 
-    let config = Config::read()
+    let config = Config::read_from(PathBuf::from("."))
         .await
         .context("Failed to read configuration file")?;
 
@@ -135,14 +135,14 @@ async fn list_assets() -> anyhow::Result<()> {
         println!("Input: {}", input_name);
 
         let mut count = 0;
-        for entry in WalkDir::new(input.path.get_prefix())
+        for entry in WalkDir::new(input.include.get_prefix())
             .follow_links(true)
             .into_iter()
             .filter_map(|e| e.ok())
         {
             if entry.file_type().is_file() {
                 if let Some(path) = entry.path().to_str() {
-                    if input.path.is_match(path) {
+                    if input.include.is_match(path) {
                         println!("  - {}", entry.path().display());
                         count += 1;
                     }

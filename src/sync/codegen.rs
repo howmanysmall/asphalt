@@ -30,7 +30,9 @@ pub enum Language {
     Luau,
 }
 
-pub fn create_node(source: &BTreeMap<RelativePathBuf, Node>, config: &config::Codegen) -> Node {
+pub type NodeSource = BTreeMap<RelativePathBuf, Node>;
+
+pub fn create_node(source: &NodeSource, config: &config::Codegen) -> Node {
     let mut root = Node::Table(BTreeMap::new());
 
     for (path, node) in source {

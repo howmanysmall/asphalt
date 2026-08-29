@@ -1,0 +1,404 @@
+// hk configuration - https://hk.jdx.dev/
+amends "package://github.com/jdx/hk/releases/download/v1.55.0/hk@1.55.0#/Config.pkl"
+
+import "package://github.com/jdx/hk/releases/download/v1.55.0/hk@1.55.0#/Builtins.pkl"
+
+exclude =
+  List(
+    "node_modules",
+    "dist",
+    "coverage",
+    "report",
+    ".git",
+    ".repos",
+    ".stryker-tmp",
+    "do-not-sync-ever",
+  )
+display_skip_reasons = List()
+terminal_progress = false
+
+local binary_excludes =
+  List(
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.webp",
+    "*.ico",
+    "*.woff",
+    "*.woff2",
+    "*.ttf",
+    "*.eot",
+    "*.pdf",
+    "*.zip",
+    "*.tar",
+    "*.gz",
+    "*.mp4",
+    "*.mov",
+  )
+
+local workflow_files =
+  List(
+    ".github/workflows/**/*.yml",
+    ".github/workflows/**/*.yaml",
+  )
+local workflow_action_files =
+  List(
+    ".github/workflows/**/*.yml",
+    ".github/workflows/**/*.yaml",
+    ".github/actions/**/action.yml",
+    ".github/actions/**/action.yaml",
+  )
+local zizmor_files =
+  List(
+    ".github/workflows/**/*.yml",
+    ".github/workflows/**/*.yaml",
+    ".github/actions/**/action.yml",
+    ".github/actions/**/action.yaml",
+    ".github/dependabot.yml",
+  )
+local markdown_files = List("**/*.md", "**/*.markdown", "**/*.mdx")
+local rust_files = List("**/*.rs")
+local rust_project_files = List("**/*.rs", "Cargo.toml", "Cargo.lock")
+local toml_files = List("**/*.toml")
+
+hooks {
+  ["pre-commit"] {
+    fix = true
+    stash = "git"
+    steps {
+      // Tier 1 — Universal checks
+      ["trailing-whitespace"] = (Builtins.trailing_whitespace) {
+        exclude = binary_excludes
+      }
+      ["newlines"] = (Builtins.newlines) {
+        exclude = binary_excludes
+      }
+      ["check-merge-conflict"] = (Builtins.check_merge_conflict) {}
+      ["check-case-conflict"] = (Builtins.check_case_conflict) {}
+      ["check-symlinks"] = (Builtins.check_symlinks) {}
+      ["mixed-line-ending"] = (Builtins.mixed_line_ending) {}
+      ["detect-private-key"] = (Builtins.detect_private_key) {
+        exclude = binary_excludes
+      }
+      ["betterleaks"] = Builtins.betterleaks
+      ["oxfmt-js"] = (Builtins.oxfmt) {
+        glob = List("*.ts", "*.tsx", "*.mts", "*.cts")
+        check = "node --run oxfmt -- --no-error-on-unmatched-pattern --check {{files}}"
+        fix = "node --run oxfmt -- --no-error-on-unmatched-pattern {{files}}"
+        check_first = true
+      }
+
+      // Rust — format staged Rust changes and lint the crate when its sources or manifest change
+      ["cargo-fmt"] {
+        glob = rust_files
+        check = "cargo fmt -- --check"
+        fix = "cargo fmt"
+        check_first = true
+      }
+      ["cargo-clippy"] {
+        glob = rust_project_files
+        check = "cargo clippy --all-features -- -D warnings"
+      }
+
+      // oxfmt for json, jsonc, json5, code-workspace, and mdx
+      // Note: .astro is intentionally excluded. oxfmt does not support it.
+      ["oxfmt-json-mdx"] = (Builtins.oxfmt) {
+        glob = List("*.json", "*.jsonc", "*.json5", "*.code-workspace", "*.mdx")
+        exclude = List("skills-lock.json")
+        check = "node --run oxfmt -- --no-error-on-unmatched-pattern --check {{files}}"
+        fix = "node --run oxfmt -- --no-error-on-unmatched-pattern {{files}}"
+        check_first = true
+      }
+      // Pkl — hk and other typed config files
+      ["pkl-format"] = (Builtins.pkl_format) {
+        glob = List("*.pkl")
+        check_first = true
+      }
+
+      // Shell scripts
+      ["shfmt"] {
+        glob = List("**/*.sh", "**/*.bash", "**/*.ksh")
+        check = "shfmt -bn -ci -sr -d {{files}}"
+        fix = "shfmt -bn -ci -sr -w {{files}}"
+        check_first = true
+      }
+      ["shfmt-detected-shell"] {
+        types = List("shell")
+        exclude = List("**/*.sh", "**/*.bash", "**/*.fish", "**/*.ksh")
+        check = "shfmt -bn -ci -sr -d {{files}}"
+        fix = "shfmt -bn -ci -sr -w {{files}}"
+        check_first = true
+      }
+      ["shellcheck"] {
+        glob = List("**/*.sh", "**/*.bash", "**/*.ksh", "**/*.dash", "**/*.zsh")
+        check = "shellcheck {{files}}"
+        batch = true
+      }
+      ["shellcheck-detected-shell"] {
+        types = List("shell")
+        exclude = List("**/*.sh", "**/*.bash", "**/*.dash", "**/*.fish", "**/*.ksh", "**/*.zsh")
+        check = "shellcheck {{files}}"
+        batch = true
+      }
+
+      // GitHub Actions workflows
+      ["actionlint"] = (Builtins.actionlint) {
+        glob = workflow_files
+        // _sccache-setup.yml is a cargo-dist build-setup fragment (a bare step
+        // list inlined into release.yml), not a workflow, so its syntax-check
+        // errors are expected and ignored.
+        check =
+          "actionlint -ignore 'section is (sequence node but mapping node is expected|missing in workflow)' {{files}}"
+      }
+      ["zizmor"] = (Builtins.zizmor) {
+        glob = zizmor_files
+      }
+      ["pinact"] {
+        glob = workflow_action_files
+        check = "PINACT_GITHUB_TOKEN=\"$(gh auth token)\" pinact run --verify {{files}}"
+        fix = "PINACT_GITHUB_TOKEN=\"$(gh auth token)\" pinact run {{files}}"
+        check_first = true
+      }
+
+      // Markdown — rumdl lint + fmt
+      ["vale"] = Builtins.vale
+      ["rumdl"] = (Builtins.rumdl) {
+        glob = markdown_files
+        exclude = List(".agents/skills/**/SKILL.md")
+        check = "rumdl check {{files}}"
+        fix =
+          """
+          rumdl check --fix {{files}}
+          rumdl fmt {{files}}
+          """
+        check_first = true
+        batch = true
+      }
+
+      // TOML — tombi lint + format
+      ["tombi"] = (Builtins.tombi) {
+        glob = toml_files
+        check = "tombi lint {{files}} && tombi format --check {{files}}"
+        fix =
+          """
+          tombi lint {{files}}
+          tombi format {{files}}
+          """
+        check_first = true
+        batch = true
+      }
+    }
+  }
+
+  ["commit-msg"] {
+    steps {
+      ["commitlint"] {
+        check =
+          "node --run commitlint -- --strict --config commitlint.config.ts --edit {{commit_msg_file}}"
+      }
+    }
+  }
+
+  ["pre-push"] {
+    steps {
+      ["check"] {
+        check = "scripts/quiet-on-success.sh mise run check"
+      }
+    }
+  }
+
+  // Manual check/fix hooks for CI or local use
+  ["check"] {
+    steps {
+      ["trailing-whitespace"] = (Builtins.trailing_whitespace) {
+        exclude = binary_excludes
+      }
+      ["newlines"] = (Builtins.newlines) {
+        exclude = binary_excludes
+      }
+      ["check-merge-conflict"] = (Builtins.check_merge_conflict) {}
+      ["check-case-conflict"] = (Builtins.check_case_conflict) {}
+      ["check-symlinks"] = (Builtins.check_symlinks) {}
+      ["mixed-line-ending"] = (Builtins.mixed_line_ending) {}
+      ["detect-private-key"] = (Builtins.detect_private_key) {
+        exclude = binary_excludes
+      }
+      ["betterleaks"] = Builtins.betterleaks
+      ["oxfmt"] = (Builtins.oxfmt) {
+        glob =
+          List(
+            "*.js",
+            "*.jsx",
+            "*.ts",
+            "*.tsx",
+            "*.mjs",
+            "*.cjs",
+            "*.mts",
+            "*.cts",
+            "*.json",
+            "*.jsonc",
+            "*.json5",
+            "*.code-workspace",
+            "*.mdx",
+          )
+        check = "node --run oxfmt -- --no-error-on-unmatched-pattern --check {{files}}"
+      }
+      ["cargo-fmt"] {
+        glob = rust_files
+        check = "cargo fmt -- --check"
+      }
+      ["cargo-clippy"] {
+        glob = rust_project_files
+        check = "cargo clippy --all-features -- -D warnings"
+      }
+      ["pkl-format"] = (Builtins.pkl_format) {
+        glob = List("*.pkl")
+      }
+      ["shfmt"] {
+        glob = List("**/*.sh", "**/*.bash", "**/*.ksh")
+        check = "shfmt -bn -ci -sr -d {{files}}"
+      }
+      ["shfmt-detected-shell"] {
+        types = List("shell")
+        exclude = List("**/*.sh", "**/*.bash", "**/*.fish", "**/*.ksh")
+        check = "shfmt -bn -ci -sr -d {{files}}"
+      }
+      ["shellcheck"] {
+        glob = List("**/*.sh", "**/*.bash", "**/*.ksh", "**/*.dash", "**/*.zsh")
+        check = "shellcheck {{files}}"
+        batch = true
+      }
+      ["shellcheck-detected-shell"] {
+        types = List("shell")
+        exclude = List("**/*.sh", "**/*.bash", "**/*.dash", "**/*.fish", "**/*.ksh", "**/*.zsh")
+        check = "shellcheck {{files}}"
+        batch = true
+      }
+      ["actionlint"] = (Builtins.actionlint) {
+        glob = workflow_files
+        // Ignore syntax-check errors from the cargo-dist build-setup fragment
+        // (see the pre-commit actionlint step for details).
+        check =
+          "actionlint -ignore 'section is (sequence node but mapping node is expected|missing in workflow)' {{files}}"
+      }
+      ["zizmor"] = (Builtins.zizmor) {
+        glob = workflow_files
+      }
+      ["pinact"] {
+        glob = workflow_action_files
+        check = "PINACT_GITHUB_TOKEN=\"$(gh auth token)\" pinact run --verify {{files}}"
+      }
+      ["vale"] = Builtins.vale
+      ["rumdl"] = (Builtins.rumdl) {
+        glob = markdown_files
+        exclude = List(".agents/skills/**/SKILL.md")
+        check = "rumdl check {{files}}"
+      }
+      ["tombi"] = (Builtins.tombi) {
+        glob = toml_files
+        check = "tombi lint {{files}} && tombi format --check {{files}}"
+      }
+    }
+  }
+
+  ["fix"] {
+    fix = true
+    stash = "git"
+    steps {
+      ["trailing-whitespace"] = (Builtins.trailing_whitespace) {
+        exclude = binary_excludes
+      }
+      ["newlines"] = (Builtins.newlines) {
+        exclude = binary_excludes
+      }
+      ["check-case-conflict"] = (Builtins.check_case_conflict) {}
+      ["check-symlinks"] = (Builtins.check_symlinks) {}
+      ["mixed-line-ending"] = (Builtins.mixed_line_ending) {}
+      ["detect-private-key"] = (Builtins.detect_private_key) {
+        exclude = binary_excludes
+      }
+      ["betterleaks"] = Builtins.betterleaks
+      ["oxfmt"] = (Builtins.oxfmt) {
+        glob =
+          List(
+            "*.js",
+            "*.jsx",
+            "*.ts",
+            "*.tsx",
+            "*.mjs",
+            "*.cjs",
+            "*.mts",
+            "*.cts",
+            "*.json",
+            "*.jsonc",
+            "*.json5",
+            "*.code-workspace",
+            "*.mdx",
+          )
+        check = "node --run oxfmt -- --no-error-on-unmatched-pattern --check {{files}}"
+        fix = "node --run oxfmt -- --no-error-on-unmatched-pattern {{files}}"
+      }
+      ["cargo-fmt"] {
+        glob = rust_files
+        check = "cargo fmt -- --check"
+        fix = "cargo fmt"
+      }
+      ["cargo-clippy"] {
+        glob = rust_project_files
+        check = "cargo clippy --all-features -- -D warnings"
+      }
+      ["pkl-format"] = (Builtins.pkl_format) {
+        glob = List("*.pkl")
+      }
+      ["shfmt"] {
+        glob = List("**/*.sh", "**/*.bash", "**/*.ksh")
+        fix = "shfmt -bn -ci -sr -w {{files}}"
+      }
+      ["shfmt-detected-shell"] {
+        types = List("shell")
+        exclude = List("**/*.sh", "**/*.bash", "**/*.fish", "**/*.ksh")
+        fix = "shfmt -bn -ci -sr -w {{files}}"
+      }
+      ["shellcheck"] {
+        glob = List("**/*.sh", "**/*.bash", "**/*.ksh", "**/*.dash", "**/*.zsh")
+        check = "shellcheck {{files}}"
+        batch = true
+      }
+      ["shellcheck-detected-shell"] {
+        types = List("shell")
+        exclude = List("**/*.sh", "**/*.bash", "**/*.dash", "**/*.fish", "**/*.ksh", "**/*.zsh")
+        check = "shellcheck {{files}}"
+        batch = true
+      }
+      ["actionlint"] = (Builtins.actionlint) {
+        glob = workflow_files
+      }
+      ["zizmor"] = (Builtins.zizmor) {
+        glob = zizmor_files
+      }
+      ["pinact"] {
+        glob = workflow_action_files
+        fix = "PINACT_GITHUB_TOKEN=\"$(gh auth token)\" pinact run {{files}}"
+      }
+      ["vale"] = Builtins.vale
+      ["rumdl"] = (Builtins.rumdl) {
+        glob = markdown_files
+        exclude = List(".agents/skills/**/SKILL.md")
+        fix =
+          """
+          rumdl check --fix {{files}}
+          rumdl fmt {{files}}
+          """
+      }
+      ["tombi"] = (Builtins.tombi) {
+        glob = toml_files
+        fix =
+          """
+          tombi lint {{files}}
+          tombi format {{files}}
+          """
+      }
+    }
+  }
+}
