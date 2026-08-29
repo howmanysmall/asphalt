@@ -145,6 +145,11 @@ hooks {
       // GitHub Actions workflows
       ["actionlint"] = (Builtins.actionlint) {
         glob = workflow_files
+        // _sccache-setup.yml is a cargo-dist build-setup fragment (a bare step
+        // list inlined into release.yml), not a workflow, so its syntax-check
+        // errors are expected and ignored.
+        check =
+          "actionlint -ignore 'section is (sequence node but mapping node is expected|missing in workflow)' {{files}}"
       }
       ["zizmor"] = (Builtins.zizmor) {
         glob = zizmor_files
@@ -272,9 +277,13 @@ hooks {
       }
       ["actionlint"] = (Builtins.actionlint) {
         glob = workflow_files
+        // Ignore syntax-check errors from the cargo-dist build-setup fragment
+        // (see the pre-commit actionlint step for details).
+        check =
+          "actionlint -ignore 'section is (sequence node but mapping node is expected|missing in workflow)' {{files}}"
       }
       ["zizmor"] = (Builtins.zizmor) {
-        glob = zizmor_files
+        glob = workflow_files
       }
       ["pinact"] {
         glob = workflow_action_files

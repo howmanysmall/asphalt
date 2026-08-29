@@ -27,6 +27,9 @@ pub struct Sprite {
 #[derive(Debug)]
 pub struct PackResult {
     pub atlases: Vec<Atlas>,
+    /// Kept for future manifest-based codegen; currently superseded by
+    /// Node-based sprite codegen in `sync::collect`.
+    #[allow(dead_code)]
     pub manifest: AtlasManifest,
 }
 
@@ -133,14 +136,14 @@ impl Packer {
                     );
                     continue;
                 }
-                seen_hashes.insert(asset.hash.clone(), name.clone());
+                seen_hashes.insert(asset.hash, name.clone());
             }
 
             sprites.push(Sprite {
                 name,
                 data: asset.data.to_vec(),
                 size,
-                hash: asset.hash.clone(),
+                hash: asset.hash.to_string(),
             });
         }
 

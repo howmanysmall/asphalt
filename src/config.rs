@@ -19,7 +19,12 @@ pub struct Config {
 
     #[schemars(description = "Asset input configurations mapped by name")]
     pub inputs: HashMap<String, Input>,
+
+    #[serde(skip)]
+    pub project_dir: PathBuf,
 }
+
+pub type InputMap = HashMap<String, Input>;
 
 pub const CONFIG_FILES: &[&str] = &[
     "asphalt.json",
@@ -29,15 +34,16 @@ pub const CONFIG_FILES: &[&str] = &[
 ];
 
 impl Config {
-    pub async fn read() -> anyhow::Result<Config> {
+    pub async fn read_from(project_dir: PathBuf) -> anyhow::Result<Config> {
         // Try each config file in priority order
         for &file_name in CONFIG_FILES {
-            if fs::metadata(file_name).await.is_ok() {
-                let content = fs::read_to_string(file_name)
+            let config_path = project_dir.join(file_name);
+            if fs::metadata(&config_path).await.is_ok() {
+                let content = fs::read_to_string(&config_path)
                     .await
                     .with_context(|| format!("Failed to read config file: {}", file_name))?;
 
-                let config = match file_name {
+                let mut config: Config = match file_name {
                     name if name.ends_with(".json") => {
                         // Use fjson for lenient JSON parsing (supports trailing commas and comments)
                         let clean_json = fjson::to_json(&content).with_context(|| {
@@ -75,6 +81,7 @@ impl Config {
                 };
 
                 log::info!("Loaded configuration from {}", file_name);
+                config.project_dir = project_dir;
                 return Ok(config);
             }
         }
@@ -149,11 +156,15 @@ fn default_true() -> bool {
 pub struct Input {
     #[schemars(with = "String")]
     #[schemars(description = "Glob pattern to match asset files (e.g., 'assets/**/*.png')")]
-    pub path: Glob,
+    #[serde(rename = "path")]
+    pub include: Glob,
     #[schemars(description = "Directory where generated code and packed assets will be written")]
     pub output_path: PathBuf,
     #[schemars(description = "Sprite packing/atlas generation configuration (optional)")]
     pub pack: Option<PackOptions>,
+
+    /// The basename of the file to output the generated code
+    pub output_basename: Option<String>,
 
     /// Enable alpha bleeding images. Keep in mind that changing this setting won't invalidate your lockfile or reupload your images
     #[serde(default = "default_true")]
