@@ -19,70 +19,87 @@ pub struct Config {
 
     #[schemars(description = "Asset input configurations mapped by name")]
     pub inputs: HashMap<String, Input>,
+
+    #[serde(skip)]
+    pub project_dir: PathBuf,
 }
 
+pub type InputMap = HashMap<String, Input>;
+
 pub const CONFIG_FILES: &[&str] = &[
+    "asphalt.jsonc",
     "asphalt.json",
     "asphalt.json5",
-    "asphalt.jsonc",
     "asphalt.toml",
 ];
 
 impl Config {
-    pub async fn read() -> anyhow::Result<Config> {
-        // Try each config file in priority order
-        for &file_name in CONFIG_FILES {
-            if fs::metadata(file_name).await.is_ok() {
-                let content = fs::read_to_string(file_name)
-                    .await
-                    .with_context(|| format!("Failed to read config file: {}", file_name))?;
-
-                let config = match file_name {
-                    name if name.ends_with(".json") => {
-                        // Use fjson for lenient JSON parsing (supports trailing commas and comments)
-                        let clean_json = fjson::to_json(&content).with_context(|| {
-                            format!("Failed to parse JSON config file: {}", file_name)
-                        })?;
-                        serde_json::from_str(&clean_json).with_context(|| {
-                            format!("Failed to deserialize JSON config: {}", file_name)
-                        })?
-                    }
-                    name if name.ends_with(".json5") => {
-                        json5::from_str(&content).with_context(|| {
-                            format!("Failed to parse JSON5 config file: {}", file_name)
-                        })?
-                    }
-                    name if name.ends_with(".jsonc") => {
-                        // Use fjson for JSONC files (supports comments and trailing commas)
-                        let clean_json = fjson::to_json(&content).with_context(|| {
-                            format!("Failed to parse JSONC config file: {}", file_name)
-                        })?;
-                        serde_json::from_str(&clean_json).with_context(|| {
-                            format!("Failed to deserialize JSONC config: {}", file_name)
-                        })?
-                    }
-                    name if name.ends_with(".toml") => {
-                        toml::from_str(&content).with_context(|| {
-                            format!("Failed to parse TOML config file: {}", file_name)
-                        })?
-                    }
-                    _ => {
-                        return Err(anyhow::anyhow!(
-                            "Unsupported config file format: {}",
-                            file_name
-                        ));
-                    }
-                };
-
-                log::info!("Loaded configuration from {}", file_name);
-                return Ok(config);
+    pub async fn read_from(project_dir: PathBuf) -> anyhow::Result<Config> {
+        for file_name in CONFIG_FILES {
+            let config_path = project_dir.join(file_name);
+            if fs::metadata(&config_path).await.is_err() {
+                continue;
             }
+
+            let content = fs::read_to_string(&config_path).await.with_context(|| {
+                format!("Failed to read config file: {}", config_path.display())
+            })?;
+
+            let mut config: Config = match *file_name {
+                name if name.ends_with(".json") => {
+                    let clean_json = fjson::to_json(&content).with_context(|| {
+                        format!(
+                            "Failed to parse JSON config file: {}",
+                            config_path.display()
+                        )
+                    })?;
+                    serde_json::from_str(&clean_json).with_context(|| {
+                        format!(
+                            "Failed to deserialize JSON config: {}",
+                            config_path.display()
+                        )
+                    })?
+                }
+                name if name.ends_with(".json5") => {
+                    json5::from_str(&content).with_context(|| {
+                        format!(
+                            "Failed to parse JSON5 config file: {}",
+                            config_path.display()
+                        )
+                    })?
+                }
+                name if name.ends_with(".jsonc") => {
+                    let clean_json = fjson::to_json(&content).with_context(|| {
+                        format!(
+                            "Failed to parse JSONC config file: {}",
+                            config_path.display()
+                        )
+                    })?;
+                    serde_json::from_str(&clean_json).with_context(|| {
+                        format!(
+                            "Failed to deserialize JSONC config: {}",
+                            config_path.display()
+                        )
+                    })?
+                }
+                name if name.ends_with(".toml") => toml::from_str(&content).with_context(|| {
+                    format!(
+                        "Failed to parse TOML config file: {}",
+                        config_path.display()
+                    )
+                })?,
+                _ => anyhow::bail!("Unsupported config file format: {file_name}"),
+            };
+
+            config.project_dir = project_dir;
+            log::info!("Loaded configuration from {}", config_path.display());
+            return Ok(config);
         }
 
-        Err(anyhow::anyhow!(
+        anyhow::bail!(
             "No configuration file found. Please create one of: {}",
             CONFIG_FILES.join(", ")
-        ))
+        )
     }
 }
 
@@ -118,21 +135,17 @@ pub struct Codegen {
     pub asset_naming_convention: AssetNamingConvention,
 }
 
-/// The type of Creator
 #[derive(Debug, Deserialize, Clone, ValueEnum, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(description = "Type of Roblox creator")]
 pub enum CreatorType {
-    /// A personal Roblox account
     User,
-    /// A Community on Roblox
     Group,
 }
 
 #[derive(Debug, Deserialize, Clone, JsonSchema)]
 #[schemars(description = "Roblox creator information")]
 pub struct Creator {
-    /// The type of Creator
     #[serde(rename = "type")]
     #[schemars(description = "Creator type: user or group")]
     pub ty: CreatorType,
@@ -148,26 +161,24 @@ fn default_true() -> bool {
 #[schemars(description = "Input asset configuration")]
 pub struct Input {
     #[schemars(with = "String")]
+    #[serde(rename = "path")]
     #[schemars(description = "Glob pattern to match asset files (e.g., 'assets/**/*.png')")]
-    pub path: Glob,
+    pub include: Glob,
     #[schemars(description = "Directory where generated code and packed assets will be written")]
     pub output_path: PathBuf,
     #[schemars(description = "Sprite packing/atlas generation configuration (optional)")]
     pub pack: Option<PackOptions>,
 
-    /// Enable alpha bleeding images. Keep in mind that changing this setting won't invalidate your lockfile or reupload your images
     #[serde(default = "default_true")]
     #[schemars(
         description = "Apply alpha bleeding to images to prevent edge artifacts (default: true)"
     )]
     pub bleed: bool,
 
-    /// A map of paths relative to the input path to existing assets on Roblox
     #[serde(default)]
     #[schemars(with = "HashMap<PathBuf, WebAsset>")]
     pub web: HashMap<RelativePathBuf, WebAsset>,
 
-    /// Emit a warning each time a duplicate file is found
     #[serde(default = "default_true")]
     #[schemars(description = "Warn for each duplicate file found (default: true)")]
     pub warn_each_duplicate: bool,
@@ -231,9 +242,7 @@ pub struct PackOptions {
     #[serde(default = "default_pack_algorithm")]
     #[schemars(description = "Packing algorithm to use (default: max_rects)")]
     pub algorithm: PackAlgorithm,
-    #[schemars(
-        description = "Maximum number of atlas pages to generate (optional, unlimited by default)"
-    )]
+    #[schemars(description = "Maximum number of atlas pages to generate")]
     pub page_limit: Option<u32>,
     #[serde(default = "default_pack_sort")]
     #[schemars(description = "Sprite sorting method for deterministic packing (default: area)")]
@@ -264,7 +273,6 @@ impl Default for PackOptions {
 #[schemars(description = "Packing algorithm to use")]
 pub enum PackAlgorithm {
     MaxRects,
-    Guillotine,
 }
 
 #[derive(Debug, Deserialize, Clone, ValueEnum, JsonSchema)]
@@ -281,9 +289,7 @@ pub enum PackSort {
 #[schemars(description = "Code generation style")]
 pub enum CodegenStyle {
     #[default]
-    /// A flat table is generated with keys that look like asset paths
     Flat,
-    /// A nested table is generated by separating the asset paths
     Nested,
 }
 
@@ -292,14 +298,10 @@ pub enum CodegenStyle {
 #[schemars(description = "Naming convention for input module names")]
 #[allow(clippy::enum_variant_names)]
 pub enum InputNamingConvention {
-    #[schemars(description = "lowercase_with_underscores (e.g., 'my_input')")]
     SnakeCase,
     #[default]
-    #[schemars(description = "firstWordLowerRestCapitalized (e.g., 'myInput') - default")]
     CamelCase,
-    #[schemars(description = "AllWordsCapitalized (e.g., 'MyInput')")]
     PascalCase,
-    #[schemars(description = "UPPERCASE_WITH_UNDERSCORES (e.g., 'MY_INPUT')")]
     ScreamingSnakeCase,
 }
 
@@ -308,19 +310,228 @@ pub enum InputNamingConvention {
 #[schemars(description = "Naming convention for asset keys in generated code")]
 #[allow(clippy::enum_variant_names)]
 pub enum AssetNamingConvention {
-    #[schemars(description = "lowercase_with_underscores (e.g., 'my_asset_name')")]
     SnakeCase,
-    #[schemars(description = "firstWordLowerRestCapitalized (e.g., 'myAssetName')")]
     CamelCase,
-    #[schemars(description = "AllWordsCapitalized (e.g., 'MyAssetName')")]
     PascalCase,
-    #[schemars(description = "UPPERCASE_WITH_UNDERSCORES (e.g., 'MY_ASSET_NAME')")]
     ScreamingSnakeCase,
-    #[schemars(description = "lowercase-with-hyphens (e.g., 'my-asset-name')")]
     KebabCase,
     #[default]
-    #[schemars(
-        description = "Preserve original name, quote if contains special characters - default"
-    )]
     Preserve,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn minimal_config_toml() -> &'static str {
+        r#"[creator]
+type = "user"
+id = 12345
+
+[inputs.icons]
+path = "icons/**/*.png"
+output_path = "out/icons.luau"
+"#
+    }
+
+    fn minimal_config_json() -> &'static str {
+        r#"{"creator":{"type":"user","id":12345},"inputs":{"icons":{"path":"icons/**/*.png","output_path":"out/icons.luau"}}}"#
+    }
+
+    fn minimal_config_json5() -> &'static str {
+        r#"{"creator":{"type":"user","id":12345},"inputs":{"icons":{"path":"icons/**/*.png","output_path":"out/icons.luau"}}}"#
+    }
+
+    fn minimal_config_jsonc() -> &'static str {
+        r#"{
+  "creator": {"type": "user", "id": 12345},
+  "inputs": {
+    "icons": {"path": "icons/**/*.png", "output_path": "out/icons.luau"}
+  }
+}"#
+    }
+
+    fn setup_temp_config(dir: &PathBuf, file_name: &str, content: &str) {
+        fs::create_dir_all(dir).unwrap();
+        let path = dir.join(file_name);
+        fs::write(&path, content).unwrap();
+    }
+
+    fn assert_valid_config(config: &Config) {
+        assert!(
+            matches!(config.creator.ty, CreatorType::User),
+            "Creator type should be User, got {:?}",
+            config.creator.ty
+        );
+        assert_eq!(config.creator.id, 12345);
+        assert_eq!(config.inputs.len(), 1);
+        let icons = config.inputs.get("icons").unwrap();
+        assert_eq!(icons.include.to_string(), "icons/**/*.png");
+        assert_eq!(icons.output_path.to_string_lossy(), "out/icons.luau");
+    }
+
+    fn run_async_test<F, T>(f: F) -> T
+    where
+        F: std::future::Future<Output = T>,
+    {
+        tokio::runtime::Runtime::new().unwrap().block_on(f)
+    }
+
+    #[test]
+    fn test_config_toml_parsing() {
+        let dir = std::env::temp_dir().join("asphalt-test-config-toml");
+        setup_temp_config(&dir, "asphalt.toml", minimal_config_toml());
+
+        let config = run_async_test(Config::read_from(dir.clone())).unwrap();
+        assert_valid_config(&config);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_config_json_parsing() {
+        let dir = std::env::temp_dir().join("asphalt-test-config-json");
+        setup_temp_config(&dir, "asphalt.json", minimal_config_json());
+
+        let config = run_async_test(Config::read_from(dir.clone())).unwrap();
+        assert_valid_config(&config);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_config_json5_parsing() {
+        let dir = std::env::temp_dir().join("asphalt-test-config-json5");
+        setup_temp_config(&dir, "asphalt.json5", minimal_config_json5());
+
+        let config = run_async_test(Config::read_from(dir.clone())).unwrap();
+        assert_valid_config(&config);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_config_jsonc_parsing() {
+        let dir = std::env::temp_dir().join("asphalt-test-config-jsonc");
+        setup_temp_config(&dir, "asphalt.jsonc", minimal_config_jsonc());
+
+        let config = run_async_test(Config::read_from(dir.clone())).unwrap();
+        assert_valid_config(&config);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_config_discovery_priority() {
+        // Config discovery iterates CONFIG_FILES in order: jsonc, json, json5, toml
+        // First file found wins. jsonc is first, so it should take priority over json and toml.
+        let dir = std::env::temp_dir().join("asphalt-test-priority");
+        setup_temp_config(
+            &dir,
+            "asphalt.json",
+            r#"{"creator":{"type":"user","id":99999},"inputs":{"a":{"path":"*.png","output_path":"out/a.luau"}}}"#,
+        );
+        setup_temp_config(
+            &dir,
+            "asphalt.jsonc",
+            r#"{"creator":{"type":"user","id":11111},"inputs":{"a":{"path":"*.png","output_path":"out/a.luau"}}}"#,
+        );
+        setup_temp_config(&dir, "asphalt.toml", minimal_config_toml());
+
+        // jsonc is checked before json and toml, so jsonc config should be loaded
+        let config = run_async_test(Config::read_from(dir.clone())).unwrap();
+        assert_eq!(
+            config.creator.id, 11111,
+            "JSONC (first in CONFIG_FILES) should be loaded over JSON/TOML"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_config_missing_file_returns_error() {
+        let dir = std::env::temp_dir().join("asphalt-test-missing");
+        fs::create_dir_all(&dir).unwrap();
+
+        let result = run_async_test(Config::read_from(dir.clone()));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("No configuration file found"),
+            "Error should mention missing config: {err}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_config_defaults() {
+        let dir = std::env::temp_dir().join("asphalt-test-defaults");
+        setup_temp_config(
+            &dir,
+            "asphalt.toml",
+            r#"[creator]
+type = "user"
+id = 1
+
+[inputs.x]
+path = "*.png"
+output_path = "out/x.luau"
+"#,
+        );
+
+        let config = run_async_test(Config::read_from(dir.clone())).unwrap();
+        // Default codegen values
+        assert!(
+            matches!(config.codegen.style, CodegenStyle::Flat),
+            "Default codegen style should be Flat, got {:?}",
+            config.codegen.style
+        );
+        assert!(
+            !config.codegen.typescript,
+            "Default typescript should be false"
+        );
+        assert!(
+            !config.codegen.strip_extensions,
+            "Default strip_extensions should be false"
+        );
+        assert!(!config.codegen.content, "Default content should be false");
+        assert!(
+            matches!(
+                config.codegen.asset_naming_convention,
+                AssetNamingConvention::Preserve
+            ),
+            "Default asset naming convention should be Preserve"
+        );
+        // Input defaults
+        let input = config.inputs.get("x").unwrap();
+        assert!(input.bleed, "Default bleed should be true");
+        assert!(
+            input.warn_each_duplicate,
+            "Default warn_each_duplicate should be true"
+        );
+        assert!(input.pack.is_none(), "Default pack should be None");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_config_invalid_toml_returns_error() {
+        let dir = std::env::temp_dir().join("asphalt-test-invalid");
+        setup_temp_config(
+            &dir,
+            "asphalt.toml",
+            r#"[creator]
+type = "user"
+id = "not-a-number"  # invalid type for id
+"#,
+        );
+
+        let result = run_async_test(Config::read_from(dir.clone()));
+        assert!(result.is_err(), "Invalid config should fail to parse");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

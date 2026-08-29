@@ -1,7 +1,8 @@
 use crate::config::{CreatorType, PackAlgorithm, PackSort};
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use clap_complete::Shell;
 use clap_verbosity_flag::{InfoLevel, Verbosity};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(version, about = "Upload and reference Roblox assets in code.")]
@@ -36,39 +37,53 @@ pub enum Commands {
     Completions(CompletionsArgs),
 
     /// Check configuration file for errors without syncing.
-    Check,
+    Check(ProjectArgs),
 
     /// List assets that would be synced without actually syncing them.
-    List,
+    List(ProjectArgs),
+
+    #[command(hide = true)]
+    GenerateConfigSchema,
 }
 
-#[derive(ValueEnum, Clone, Copy)]
+#[derive(Subcommand, Clone, Copy)]
 pub enum SyncTarget {
-    Cloud,
+    /// Upload assets to Roblox cloud.
+    Cloud {
+        /// Error if assets would be uploaded.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Write assets to the Roblox Studio content folder.
     Studio,
+    /// Write assets to the .asphalt-debug folder.
     Debug,
+}
+
+impl SyncTarget {
+    pub fn write_on_sync(&self) -> bool {
+        matches!(self, SyncTarget::Cloud { dry_run: false })
+    }
 }
 
 #[derive(Args, Clone)]
 pub struct SyncArgs {
     /// Your Open Cloud API key.
-    /// Can also be set with the ASPHALT_API_KEY environment variable.
-    #[arg(short, long)]
+    #[arg(short, long, env = "ASPHALT_API_KEY")]
     pub api_key: Option<String>,
 
     /// Where Asphalt should sync assets to.
-    #[arg(short, long, default_value = "cloud")]
-    pub target: SyncTarget,
-
-    /// Skip asset syncing and only display what assets will be synced.
-    #[arg(long)]
-    pub dry_run: bool,
+    #[command(subcommand)]
+    target: Option<SyncTarget>,
 
     /// Provides Roblox with the amount of Robux that you are willing to spend on each non-free asset upload.
     #[arg(long)]
     pub expected_price: Option<u32>,
 
-    // Pack-related arguments
+    /// Path to the project directory. Defaults to the current directory.
+    #[arg(short, long, default_value = ".")]
+    pub project: PathBuf,
+
     /// Enable packing for all inputs that support it.
     #[arg(long)]
     pub pack: bool,
@@ -118,20 +133,102 @@ pub struct SyncArgs {
     pub optimize: bool,
 }
 
+impl SyncArgs {
+    pub fn target(&self) -> SyncTarget {
+        self.target.unwrap_or(SyncTarget::Cloud { dry_run: false })
+    }
+}
+
 fn parse_size(s: &str) -> Result<(u32, u32), String> {
-    let parts: Vec<&str> = s.split('x').collect();
-    if parts.len() != 2 {
-        return Err("Size must be in format WxH (e.g., 2048x2048)".to_string());
+    let (width, height) = s
+        .split_once('x')
+        .ok_or_else(|| "Size must be in format WxH (e.g., 2048x2048)".to_string())?;
+
+    Ok((
+        width
+            .parse::<u32>()
+            .map_err(|_| "Width must be a valid number")?,
+        height
+            .parse::<u32>()
+            .map_err(|_| "Height must be a valid number")?,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_size_valid() {
+        let result = parse_size("2048x2048").unwrap();
+        assert_eq!(result, (2048, 2048));
     }
 
-    let width = parts[0]
-        .parse::<u32>()
-        .map_err(|_| "Width must be a valid number")?;
-    let height = parts[1]
-        .parse::<u32>()
-        .map_err(|_| "Height must be a valid number")?;
+    #[test]
+    fn test_parse_size_varied_dimensions() {
+        let result = parse_size("512x1024").unwrap();
+        assert_eq!(result, (512, 1024));
+    }
 
-    Ok((width, height))
+    #[test]
+    fn test_parse_size_minimal() {
+        let result = parse_size("1x1").unwrap();
+        assert_eq!(result, (1, 1));
+    }
+
+    #[test]
+    fn test_parse_size_large() {
+        let result = parse_size("8192x4096").unwrap();
+        assert_eq!(result, (8192, 4096));
+    }
+
+    #[test]
+    fn test_parse_size_invalid_no_x() {
+        let err = parse_size("2048").unwrap_err();
+        assert!(err.contains("WxH"));
+    }
+
+    #[test]
+    fn test_parse_size_invalid_empty() {
+        let err = parse_size("").unwrap_err();
+        assert!(err.contains("WxH"));
+    }
+
+    #[test]
+    fn test_parse_size_invalid_non_numeric() {
+        let err = parse_size("abcxdef").unwrap_err();
+        assert!(err.contains("Width") || err.contains("number"));
+    }
+
+    #[test]
+    fn test_parse_size_invalid_negative() {
+        let err = parse_size("-100x100").unwrap_err();
+        assert!(err.contains("Width") || err.contains("number"));
+    }
+
+    #[test]
+    fn test_sync_target_cloud_write_on_sync() {
+        let target = SyncTarget::Cloud { dry_run: false };
+        assert!(target.write_on_sync());
+    }
+
+    #[test]
+    fn test_sync_target_cloud_dry_run_no_write() {
+        let target = SyncTarget::Cloud { dry_run: true };
+        assert!(!target.write_on_sync());
+    }
+
+    #[test]
+    fn test_sync_target_studio_no_write() {
+        let target = SyncTarget::Studio;
+        assert!(!target.write_on_sync());
+    }
+
+    #[test]
+    fn test_sync_target_debug_no_write() {
+        let target = SyncTarget::Debug;
+        assert!(!target.write_on_sync());
+    }
 }
 
 #[derive(Args)]
@@ -149,7 +246,7 @@ pub struct UploadArgs {
 
     /// Your Open Cloud API key.
     /// Can also be set with the ASPHALT_API_KEY environment variable.
-    #[arg(short, long)]
+    #[arg(short, long, env = "ASPHALT_API_KEY")]
     pub api_key: Option<String>,
 
     /// Whether to alpha bleed if it's an image.
@@ -169,6 +266,10 @@ pub struct UploadArgs {
 pub struct MigrateLockfileArgs {
     /// The default input name to use. Only applies when upgrading from V0 to V1.
     pub input_name: Option<String>,
+
+    /// Path to the project directory. Defaults to the current directory.
+    #[arg(short, long, default_value = ".")]
+    pub project: PathBuf,
 }
 
 #[derive(Args)]
@@ -182,4 +283,11 @@ pub struct GenerateSchemaArgs {
 pub struct CompletionsArgs {
     /// The shell to generate completions for.
     pub shell: Shell,
+}
+
+#[derive(Args)]
+pub struct ProjectArgs {
+    /// Path to the project directory. Defaults to the current directory.
+    #[arg(short, long, default_value = ".")]
+    pub project: PathBuf,
 }
