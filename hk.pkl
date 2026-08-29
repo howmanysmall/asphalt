@@ -141,17 +141,6 @@ hooks {
         check = "shellcheck {{files}}"
         batch = true
       }
-      ["fish-syntax"] {
-        glob = List("**/*.fish")
-        check = "fish --no-config --no-execute {{files}}"
-        batch = false
-      }
-      ["fish-indent"] {
-        glob = List("**/*.fish")
-        check = "fish_indent --check {{files}}"
-        fix = "fish_indent --write {{files}}"
-        check_first = true
-      }
 
       // GitHub Actions workflows
       ["actionlint"] = (Builtins.actionlint) {
